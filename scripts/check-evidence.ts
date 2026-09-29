@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 // each crit's cutoff reads its own; any one passes here
-const REFLECTIONS = ["crit-8.md", "crit-9.md", "crit-10.md"];
+const REFLECTIONS = ["crit-7.md", "crit-8.md", "crit-9.md", "crit-10.md"];
 
 let failed = false;
 const fail = (msg: string): void => {
