@@ -189,7 +189,10 @@ const status = Astro.url.searchParams.get("status");
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
           const id = form.getAttribute("data-id");
-          const res = await fetch(`/api/bookings/${id}`, { method: "DELETE" });
+          const res = await fetch(`/api/bookings/${id}`, {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+          });
           if (!res.ok) {
             const responseBody = await res.json().catch(() => ({}));
             showError(responseBody.error ?? "Could not cancel booking.");

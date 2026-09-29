@@ -25,6 +25,12 @@ dockerfile = "Dockerfile"
 
 [env]
 PORT = "8080"
+# @astrojs/node's `host: true` adapter option is inert in the installed
+# version (11.1.6) — it derives the bind address from Astro's own top-level
+# server.host config, which defaults to false/localhost. HOST here overrides
+# that at runtime (@astrojs/node reads process.env.HOST first) so the server
+# actually binds 0.0.0.0, which Fly's proxy needs to reach the container.
+HOST = "0.0.0.0"
 
 [http_service]
 internal_port = 8080
