@@ -2,6 +2,17 @@ node_modules/
 dist/
 *.log
 
+# Astro's local type-generation cache
+.astro/
+
+# local SQLite dev database (production data lives on the Fly volume at
+# /data, which isn't part of this repo either)
+.data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # editor and OS junk
 .DS_Store
 ._*

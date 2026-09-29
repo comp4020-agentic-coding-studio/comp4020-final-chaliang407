@@ -1,18 +1,31 @@
 # syntax = docker/dockerfile:1
 
-# A placeholder, and yours to replace: it serves one page, plus README.md
-# verbatim at /readme/, which is enough to prove the deploy path end to end.
-# Whatever your app is built with, the image that replaces this one must serve
-# HTTP on 0.0.0.0:$PORT (fly.toml sets PORT) and publish README.md at /readme/
-# (spec/README.md says what's checked).
+# Astro (Node adapter, standalone) + Drizzle + better-sqlite3. The app must
+# serve HTTP on 0.0.0.0:$PORT (fly.toml sets PORT) and publish README.md at
+# /readme/ (spec/README.md says what's checked) — src/pages/readme/index.astro
+# does the latter by reading README.md from the working directory at request
+# time, so it has to be copied into both stages below.
+#
+# node:24-slim (glibc, matches mise.toml's node version) rather than an
+# alpine base: better-sqlite3 needs a native binding, and glibc prebuilds are
+# the reliable path without adding a build toolchain to the runtime image.
 
-FROM docker.io/library/busybox:1.38.0
-COPY placeholder/ /src/
-COPY README.md /src/
-# README.md goes into the page as-is, HTML-escaped, in place of @README@;
-# rendering it properly is your app's job
-RUN mkdir -p /site/readme \
-    && cp /src/index.html /site/ \
-    && sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' /src/README.md > /src/body \
-    && sed -e '/@README@/{r /src/body' -e 'd}' /src/readme.html > /site/readme/index.html
-CMD ["sh", "-c", "exec httpd -f -p 0.0.0.0:${PORT:-8080} -h /site"]
+FROM node:24-slim AS builder
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
+
+FROM node:24-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --prod
+COPY --from=builder /app/dist ./dist
+COPY drizzle ./drizzle
+COPY README.md ./README.md
+
+CMD ["node", "./dist/server/entry.mjs"]

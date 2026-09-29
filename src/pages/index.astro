@@ -1,0 +1,36 @@
+---
+import { db } from "../db/client.ts";
+import { rooms } from "../db/schema.ts";
+
+// Bare proof that the page renders from the database, not a polished
+// booking UI (that's the next iteration).
+const allRooms = db.select().from(rooms).all();
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ANU Room Booking (foundation)</title>
+  </head>
+  <body>
+    <main>
+      <h1>ANU Room Booking — foundation</h1>
+      <p>
+        This iteration only wires up the database: seeded demo rooms below,
+        read straight out of SQLite. Booking a room isn't built yet.
+      </p>
+      <ul>
+        {
+          allRooms.map((room) => (
+            <li>
+              {room.name} — {room.location} (capacity {room.capacity})
+            </li>
+          ))
+        }
+      </ul>
+      <p><a href="/readme/">About this app</a></p>
+    </main>
+  </body>
+</html>

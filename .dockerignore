@@ -11,3 +11,9 @@ dist
 mise.local.toml
 *.pem
 .claude
+.astro
+.data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

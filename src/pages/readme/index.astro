@@ -1,0 +1,25 @@
+---
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+// README.md is copied to the app's cwd in the Dockerfile; reading it here
+// (rather than at build time) keeps this in sync with whatever's on disk in
+// both dev and the deployed image. Astro auto-escapes {readme} below, same
+// as the placeholder's verbatim copy did.
+const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>About</title>
+  </head>
+  <body>
+    <main>
+      <h1>About</h1>
+      <pre>{readme}</pre>
+    </main>
+  </body>
+</html>
