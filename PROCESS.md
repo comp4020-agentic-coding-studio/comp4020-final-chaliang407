@@ -1,10 +1,12 @@
 # Process overview
 
-This app was built in four directed stages: a data/backend foundation, a
+This app was built in five directed stages: a data/backend foundation, a
 persistent booking flow, manual browser testing that surfaced real interaction
-problems, and a correction of those problems followed by a final visual pass.
-Nothing here was auto-generated in one shot — each stage was a separate,
-scoped instruction to the agent, checked before I let it move to the next one.
+problems, a correction of those problems followed by a final visual pass, and
+a production-deployment pass that fixed real Fly.io failures the local tests
+never caught. Nothing here was auto-generated in one shot — each stage was a
+separate, scoped instruction to the agent, checked before I let it move to
+the next one.
 
 ## 1. Foundation
 
@@ -71,6 +73,34 @@ regression check — re-verifying the persisted booking still survived a
 reload, and that booking, overlap rejection, and cancellation still worked
 end to end — before committing both together as
 [`188fb85`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/188fb85).
+
+## 5. Making the real deployment work
+
+Deploying to Fly.io surfaced problems local testing never hit. `pnpm build`
+and the tests were green locally, but the first real remote build failed:
+`better-sqlite3` has no prebuilt binary for that platform, so `pnpm install`
+compiles it, and the runtime
+image had no C/C++ toolchain to do that with. Adding, then removing, that
+toolchain in the Dockerfile fixed the build — but the deployed machine still
+refused every connection, because `@astrojs/node`'s `host: true` option is
+inert in the installed version and falls back to Astro's own `server.host`
+default of `false`. Setting `HOST=0.0.0.0` in `fly.toml`, read first by the
+adapter at runtime, fixed reachability.
+
+With the app reachable over HTTPS, a production smoke test found a third
+problem: cancelling a booking returned 403 behind Fly's TLS-terminating
+proxy, while creating one didn't. Astro's CSRF check compares the browser's
+`Origin` against the app's own computed origin, which is always `http://`
+behind Fly's proxy — but that strict comparison only applies to requests
+without a form-like `content-type`, which the cancel request lacked and the
+create request didn't. Rather than weaken or disable the origin check, the
+cancel request was changed to send `content-type: application/json`,
+matching the create request and landing on the same code path Astro already
+treats as safe. A full production pass then confirmed the fix end to end:
+`/` and `/readme/` both 200, a booking created (201) and read back across
+separate requests, an overlap rejected (409), and the booking cancelled (200)
+and confirmed gone — committed as
+[`e6f4abc`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/e6f4abc).
 
 ## How I directed and checked the agent's work
 
