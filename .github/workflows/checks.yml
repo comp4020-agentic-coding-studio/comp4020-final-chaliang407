@@ -35,7 +35,7 @@ jobs:
         # volume; the spec runs against it
         run: |
           docker build -t app .
-          docker run -d --init --name app -p 8080:8080 -e PORT=8080 --tmpfs /data app
+          docker run -d --init --name app -p 8080:8080 -e PORT=8080 -e HOST=0.0.0.0 --tmpfs /data app
       - name: Run the spec
         run: pnpm check
         env:
