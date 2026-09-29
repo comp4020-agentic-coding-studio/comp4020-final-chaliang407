@@ -1,10 +1,11 @@
 ---
+import { listBookings } from "../db/bookings.ts";
 import { db } from "../db/client.ts";
 import { rooms } from "../db/schema.ts";
 
-// Bare proof that the page renders from the database, not a polished
-// booking UI (that's the next iteration).
 const allRooms = db.select().from(rooms).all();
+const allBookings = listBookings(db);
+const durations = [30, 60, 90, 120];
 ---
 
 <!doctype html>
@@ -12,25 +13,152 @@ const allRooms = db.select().from(rooms).all();
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ANU Room Booking (foundation)</title>
+    <title>ANU Room Booking</title>
   </head>
   <body>
     <main>
-      <h1>ANU Room Booking — foundation</h1>
-      <p>
-        This iteration only wires up the database: seeded demo rooms below,
-        read straight out of SQLite. Booking a room isn't built yet.
-      </p>
-      <ul>
-        {
-          allRooms.map((room) => (
-            <li>
-              {room.name} — {room.location} (capacity {room.capacity})
-            </li>
-          ))
-        }
-      </ul>
+      <h1>ANU Room Booking</h1>
+      <p>Book a fictional demo study room and it'll still be here after a reload.</p>
+
+      <p id="error-banner" hidden><strong id="error-text"></strong></p>
+
+      <section>
+        <h2>Available rooms</h2>
+        <ul>
+          {
+            allRooms.map((room) => (
+              <li>
+                {room.name} — {room.location} (capacity {room.capacity})
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+
+      <section>
+        <h2>Book a room</h2>
+        <form id="booking-form">
+          <div>
+            <label for="roomId">Room</label>
+            <select id="roomId" name="roomId" required>
+              {
+                allRooms.map((room) => (
+                  <option value={room.id}>
+                    {room.name} — {room.location}
+                  </option>
+                ))
+              }
+            </select>
+          </div>
+          <div>
+            <label for="bookedBy">Your name</label>
+            <input id="bookedBy" type="text" name="bookedBy" required maxlength="200" />
+          </div>
+          <div>
+            <label for="date">Date</label>
+            <input id="date" type="date" name="date" required />
+          </div>
+          <div>
+            <label for="startTime">Start time</label>
+            <input id="startTime" type="time" name="startTime" required />
+          </div>
+          <div>
+            <label for="durationMinutes">Duration</label>
+            <select id="durationMinutes" name="durationMinutes" required>
+              {
+                durations.map((minutes) => (
+                  <option value={minutes}>{minutes} minutes</option>
+                ))
+              }
+            </select>
+          </div>
+          <button type="submit">Book</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>My bookings</h2>
+        {allBookings.length === 0 && <p>No bookings yet.</p>}
+        <ul>
+          {
+            allBookings.map((booking) => (
+              <li>
+                {booking.roomName} — {booking.startsAt} to {booking.endsAt} ({booking.bookedBy})
+                <form class="cancel-form" data-id={booking.id}>
+                  <button type="submit">Cancel</button>
+                </form>
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+
       <p><a href="/readme/">About this app</a></p>
     </main>
+
+    <script>
+      function showError(message: string) {
+        const banner = document.getElementById("error-banner");
+        const text = document.getElementById("error-text");
+        if (!banner || !text) return;
+        text.textContent = message;
+        banner.hidden = false;
+      }
+
+      // Combines the three inputs into the "YYYY-MM-DDTHH:mm" strings the API
+      // expects, using local Date getters throughout so a booking spanning
+      // midnight rolls over correctly without any timezone conversion.
+      function combineLocal(date: string, time: string, durationMinutes: number) {
+        const [y, m, d] = date.split("-").map(Number);
+        const [hh, mm] = time.split(":").map(Number);
+        const start = new Date(y, m - 1, d, hh, mm);
+        const end = new Date(start.getTime() + durationMinutes * 60000);
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const fmt = (dt: Date) =>
+          `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+        return { startsAt: fmt(start), endsAt: fmt(end) };
+      }
+
+      const bookingForm = document.getElementById("booking-form") as HTMLFormElement | null;
+      bookingForm?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const data = new FormData(bookingForm);
+        const { startsAt, endsAt } = combineLocal(
+          String(data.get("date")),
+          String(data.get("startTime")),
+          Number(data.get("durationMinutes")),
+        );
+        const res = await fetch("/api/bookings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            roomId: Number(data.get("roomId")),
+            bookedBy: data.get("bookedBy"),
+            startsAt,
+            endsAt,
+          }),
+        });
+        if (!res.ok) {
+          const responseBody = await res.json().catch(() => ({}));
+          showError(responseBody.error ?? "could not create booking");
+          return;
+        }
+        location.reload();
+      });
+
+      for (const cancelForm of document.querySelectorAll<HTMLFormElement>(".cancel-form")) {
+        cancelForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const id = cancelForm.getAttribute("data-id");
+          const res = await fetch(`/api/bookings/${id}`, { method: "DELETE" });
+          if (!res.ok) {
+            const responseBody = await res.json().catch(() => ({}));
+            showError(responseBody.error ?? "could not cancel booking");
+            return;
+          }
+          location.reload();
+        });
+      }
+    </script>
   </body>
 </html>
