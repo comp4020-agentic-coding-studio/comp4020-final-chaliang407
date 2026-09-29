@@ -2,10 +2,13 @@
 import { listBookings } from "../db/bookings.ts";
 import { db } from "../db/client.ts";
 import { rooms } from "../db/schema.ts";
+import { formatDateTimeRange } from "../lib/format.ts";
 
 const allRooms = db.select().from(rooms).all();
 const allBookings = listBookings(db);
 const durations = [30, 60, 90, 120];
+
+const status = Astro.url.searchParams.get("status");
 ---
 
 <!doctype html>
@@ -13,95 +16,130 @@ const durations = [30, 60, 90, 120];
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ANU Room Booking</title>
+    <title>Room Booking (student demo)</title>
   </head>
   <body>
-    <main>
-      <h1>ANU Room Booking</h1>
-      <p>Book a fictional demo study room and it'll still be here after a reload.</p>
+    <div class="page">
+      <header class="page-header">
+        <span class="eyebrow">COMP4020 student project · demo</span>
+        <h1>Book a study room</h1>
+        <p class="lede">Pick a fictional demo room below, choose a time, and it's booked. No account needed.</p>
+      </header>
 
-      <p id="error-banner" hidden><strong id="error-text"></strong></p>
+      {status === "booked" && (
+        <p class="banner banner-success" role="status">Booking confirmed — see it under "My bookings" below.</p>
+      )}
+      {status === "cancelled" && <p class="banner banner-success" role="status">Booking cancelled.</p>}
+      <p class="banner banner-error" role="alert" id="error-banner" hidden></p>
 
-      <section>
-        <h2>Available rooms</h2>
-        <ul>
+      <section aria-labelledby="rooms-heading">
+        <h2 id="rooms-heading">Available rooms</h2>
+        <ul class="room-grid">
           {
             allRooms.map((room) => (
-              <li>
-                {room.name} — {room.location} (capacity {room.capacity})
+              <li class="room-card">
+                <h3>{room.name}</h3>
+                <p class="room-meta">
+                  <span class="meta-item">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                      <path d="M12 21s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12Z" />
+                      <circle cx="12" cy="9" r="2.5" />
+                    </svg>
+                    {room.location}
+                  </span>
+                  <span class="meta-item">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                      <path d="M17 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-3A3.5 3.5 0 0 0 7 18.5V20" />
+                      <circle cx="12" cy="8" r="3.25" />
+                    </svg>
+                    Seats {room.capacity}
+                  </span>
+                </p>
+                <details class="book-toggle">
+                  <summary aria-label={`Book ${room.name}`}>
+                    <span>Book this room</span>
+                    <svg class="icon chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </summary>
+                  <form class="booking-form">
+                    <input type="hidden" name="roomId" value={room.id} />
+                    <div class="field">
+                      <label for={`bookedBy-${room.id}`}>Your name</label>
+                      <input id={`bookedBy-${room.id}`} type="text" name="bookedBy" required maxlength="200" />
+                    </div>
+                    <div class="field-row">
+                      <div class="field">
+                        <label for={`date-${room.id}`}>Date</label>
+                        <input id={`date-${room.id}`} type="date" name="date" required />
+                      </div>
+                      <div class="field">
+                        <label for={`startTime-${room.id}`}>Start time</label>
+                        <input id={`startTime-${room.id}`} type="time" name="startTime" required />
+                      </div>
+                      <div class="field">
+                        <label for={`durationMinutes-${room.id}`}>Duration</label>
+                        <select id={`durationMinutes-${room.id}`} name="durationMinutes" required>
+                          {durations.map((minutes) => <option value={minutes}>{minutes} min</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Book {room.name}</button>
+                  </form>
+                </details>
               </li>
             ))
           }
         </ul>
       </section>
 
-      <section>
-        <h2>Book a room</h2>
-        <form id="booking-form">
-          <div>
-            <label for="roomId">Room</label>
-            <select id="roomId" name="roomId" required>
+      <section aria-labelledby="bookings-heading">
+        <h2 id="bookings-heading">My bookings</h2>
+        {
+          allBookings.length === 0 ? (
+            <p class="empty-state">No bookings yet — book a room above to see it here.</p>
+          ) : (
+            <ul class="booking-list">
               {
-                allRooms.map((room) => (
-                  <option value={room.id}>
-                    {room.name} — {room.location}
-                  </option>
+                allBookings.map((booking) => (
+                  <li class="booking-card">
+                    <div class="booking-main">
+                      <p class="booking-time">{formatDateTimeRange(booking.startsAt, booking.endsAt)}</p>
+                      <p class="booking-room">
+                        {booking.roomName}
+                        <span class="meta-divider" aria-hidden="true">·</span>
+                        {booking.roomLocation}
+                      </p>
+                      <p class="booking-meta">Booked by {booking.bookedBy}</p>
+                    </div>
+                    <form class="cancel-form" data-id={booking.id}>
+                      <button
+                        type="submit"
+                        class="btn btn-danger"
+                        aria-label={`Cancel booking for ${booking.roomName} on ${formatDateTimeRange(booking.startsAt, booking.endsAt)}`}
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  </li>
                 ))
               }
-            </select>
-          </div>
-          <div>
-            <label for="bookedBy">Your name</label>
-            <input id="bookedBy" type="text" name="bookedBy" required maxlength="200" />
-          </div>
-          <div>
-            <label for="date">Date</label>
-            <input id="date" type="date" name="date" required />
-          </div>
-          <div>
-            <label for="startTime">Start time</label>
-            <input id="startTime" type="time" name="startTime" required />
-          </div>
-          <div>
-            <label for="durationMinutes">Duration</label>
-            <select id="durationMinutes" name="durationMinutes" required>
-              {
-                durations.map((minutes) => (
-                  <option value={minutes}>{minutes} minutes</option>
-                ))
-              }
-            </select>
-          </div>
-          <button type="submit">Book</button>
-        </form>
+            </ul>
+          )
+        }
       </section>
 
-      <section>
-        <h2>My bookings</h2>
-        {allBookings.length === 0 && <p>No bookings yet.</p>}
-        <ul>
-          {
-            allBookings.map((booking) => (
-              <li>
-                {booking.roomName} — {booking.startsAt} to {booking.endsAt} ({booking.bookedBy})
-                <form class="cancel-form" data-id={booking.id}>
-                  <button type="submit">Cancel</button>
-                </form>
-              </li>
-            ))
-          }
-        </ul>
-      </section>
-
-      <p><a href="/readme/">About this app</a></p>
-    </main>
+      <footer class="page-footer">
+        <p>Student demo project for COMP4020 — not an official ANU service. Rooms shown are fictional.</p>
+        <p><a href="/readme/">About this app</a></p>
+      </footer>
+    </div>
 
     <script>
       function showError(message: string) {
         const banner = document.getElementById("error-banner");
-        const text = document.getElementById("error-text");
-        if (!banner || !text) return;
-        text.textContent = message;
+        if (!banner) return;
+        banner.textContent = message;
         banner.hidden = false;
       }
 
@@ -119,46 +157,458 @@ const durations = [30, 60, 90, 120];
         return { startsAt: fmt(start), endsAt: fmt(end) };
       }
 
-      const bookingForm = document.getElementById("booking-form") as HTMLFormElement | null;
-      bookingForm?.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const data = new FormData(bookingForm);
-        const { startsAt, endsAt } = combineLocal(
-          String(data.get("date")),
-          String(data.get("startTime")),
-          Number(data.get("durationMinutes")),
-        );
-        const res = await fetch("/api/bookings", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            roomId: Number(data.get("roomId")),
-            bookedBy: data.get("bookedBy"),
-            startsAt,
-            endsAt,
-          }),
-        });
-        if (!res.ok) {
-          const responseBody = await res.json().catch(() => ({}));
-          showError(responseBody.error ?? "could not create booking");
-          return;
-        }
-        location.reload();
-      });
-
-      for (const cancelForm of document.querySelectorAll<HTMLFormElement>(".cancel-form")) {
-        cancelForm.addEventListener("submit", async (event) => {
+      for (const form of document.querySelectorAll<HTMLFormElement>(".booking-form")) {
+        form.addEventListener("submit", async (event) => {
           event.preventDefault();
-          const id = cancelForm.getAttribute("data-id");
+          const data = new FormData(form);
+          const { startsAt, endsAt } = combineLocal(
+            String(data.get("date")),
+            String(data.get("startTime")),
+            Number(data.get("durationMinutes")),
+          );
+          const res = await fetch("/api/bookings", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              roomId: Number(data.get("roomId")),
+              bookedBy: data.get("bookedBy"),
+              startsAt,
+              endsAt,
+            }),
+          });
+          if (!res.ok) {
+            const responseBody = await res.json().catch(() => ({}));
+            showError(responseBody.error ?? "Could not create booking.");
+            return;
+          }
+          location.href = "/?status=booked";
+        });
+      }
+
+      for (const form of document.querySelectorAll<HTMLFormElement>(".cancel-form")) {
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const id = form.getAttribute("data-id");
           const res = await fetch(`/api/bookings/${id}`, { method: "DELETE" });
           if (!res.ok) {
             const responseBody = await res.json().catch(() => ({}));
-            showError(responseBody.error ?? "could not cancel booking");
+            showError(responseBody.error ?? "Could not cancel booking.");
             return;
           }
-          location.reload();
+          location.href = "/?status=cancelled";
         });
       }
+
+      // Drop the one-shot success flag from the URL so a manual refresh
+      // doesn't keep re-showing a stale confirmation banner.
+      if (location.search.includes("status=")) {
+        history.replaceState(null, "", location.pathname);
+      }
     </script>
+
+    <style>
+      :root {
+        --color-bg: #f5f6f8;
+        --color-surface: #ffffff;
+        --color-border: #d8dce3;
+        --color-text: #1f2430;
+        --color-muted: #5b6472;
+        --color-primary: #1b3a63;
+        --color-primary-dark: #12294a;
+        --color-primary-tint: #e7edf5;
+        --color-danger: #9c2b2b;
+        --color-success-bg: #e6f4ea;
+        --color-success-text: #1e5631;
+        --color-error-bg: #fdecec;
+        --color-error-text: #7a2020;
+        --radius: 10px;
+        --shadow:
+          0 1px 2px rgba(15, 23, 42, 0.06),
+          0 1px 8px rgba(15, 23, 42, 0.04);
+        --shadow-hover:
+          0 4px 14px rgba(15, 23, 42, 0.1),
+          0 1px 3px rgba(15, 23, 42, 0.06);
+
+        --text-xs: 0.8125rem;
+        --text-sm: 0.875rem;
+        --text-base: 1rem;
+        --text-md: 1.0625rem;
+        --text-lg: 1.25rem;
+        --text-xl: clamp(1.75rem, 2.5vw, 2.25rem);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          "Segoe UI",
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: var(--color-bg);
+        color: var(--color-text);
+        line-height: 1.5;
+      }
+
+      .page {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2rem 1.25rem 4rem;
+      }
+
+      .page-header {
+        margin-bottom: 2.25rem;
+      }
+
+      .eyebrow {
+        display: inline-block;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-size: var(--text-xs);
+        font-weight: 600;
+        color: var(--color-primary);
+        background: var(--color-primary-tint);
+        padding: 0.3rem 0.7rem;
+        border-radius: 999px;
+        margin: 0 0 0.85rem;
+      }
+
+      h1 {
+        margin: 0 0 0.6rem;
+        font-size: var(--text-xl);
+        color: var(--color-primary-dark);
+      }
+
+      .lede {
+        margin: 0;
+        color: var(--color-muted);
+        font-size: var(--text-base);
+        max-width: 52ch;
+      }
+
+      h2 {
+        font-size: var(--text-lg);
+        margin: 0 0 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 1px solid var(--color-border);
+        color: var(--color-primary-dark);
+      }
+
+      section {
+        margin-bottom: 2.75rem;
+      }
+
+      .banner {
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius);
+        margin: 0 0 1.5rem;
+        font-size: var(--text-sm);
+      }
+
+      .banner:empty {
+        display: none;
+      }
+
+      .banner-success {
+        background: var(--color-success-bg);
+        color: var(--color-success-text);
+        border: 1px solid #b7ddc2;
+      }
+
+      .banner-error {
+        background: var(--color-error-bg);
+        color: var(--color-error-text);
+        border: 1px solid #f0bcbc;
+      }
+
+      .room-grid {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+      }
+
+      .room-card,
+      .booking-card {
+        transition:
+          box-shadow 0.15s ease,
+          transform 0.15s ease;
+      }
+
+      .room-card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 1.25rem;
+        box-shadow: var(--shadow);
+      }
+
+      .room-card:hover,
+      .booking-card:hover {
+        box-shadow: var(--shadow-hover);
+        transform: translateY(-2px);
+      }
+
+      .room-card h3 {
+        margin: 0;
+        font-size: var(--text-md);
+        font-weight: 600;
+      }
+
+      .room-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 1rem;
+        margin: 0.5rem 0 0;
+        color: var(--color-muted);
+        font-size: var(--text-sm);
+      }
+
+      .meta-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+
+      .meta-divider {
+        margin: 0 0.4rem;
+        color: var(--color-border);
+      }
+
+      .icon {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+      }
+
+      .icon.chevron {
+        transition: transform 0.15s ease;
+      }
+
+      .book-toggle[open] summary .icon.chevron {
+        transform: rotate(180deg);
+      }
+
+      .book-toggle {
+        margin-top: 0.85rem;
+      }
+
+      .book-toggle summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: var(--color-primary);
+        list-style: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.5rem 0.9rem;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        transition:
+          background-color 0.15s ease,
+          border-color 0.15s ease;
+      }
+
+      .book-toggle summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .book-toggle summary::marker {
+        content: "";
+      }
+
+      .book-toggle summary:hover {
+        background: var(--color-bg);
+        border-color: var(--color-primary);
+      }
+
+      .book-toggle[open] summary {
+        border-color: var(--color-primary);
+        background: var(--color-primary-tint);
+      }
+
+      .booking-form {
+        margin-top: 0.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .field-row {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      .field-row .field {
+        flex: 1 1 100px;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      label {
+        font-size: var(--text-xs);
+        color: var(--color-muted);
+      }
+
+      input,
+      select {
+        width: 100%;
+        padding: 0.5rem 0.6rem;
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        font-size: var(--text-base);
+        font-family: inherit;
+        color: var(--color-text);
+        background: var(--color-surface);
+        transition: border-color 0.15s ease;
+      }
+
+      input:hover,
+      select:hover {
+        border-color: var(--color-muted);
+      }
+
+      .btn {
+        font-family: inherit;
+        border: none;
+        border-radius: 6px;
+        padding: 0.6rem 1.1rem;
+        font-size: var(--text-base);
+        font-weight: 600;
+        cursor: pointer;
+        align-self: flex-start;
+        transition:
+          background-color 0.15s ease,
+          color 0.15s ease,
+          transform 0.05s ease;
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .btn-primary {
+        background: var(--color-primary);
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background: var(--color-primary-dark);
+      }
+
+      .btn-danger {
+        background: transparent;
+        color: var(--color-danger);
+        border: 1px solid var(--color-danger);
+      }
+
+      .btn-danger:hover {
+        background: var(--color-danger);
+        color: white;
+      }
+
+      a:focus-visible,
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid #4a90d9;
+        outline-offset: 2px;
+      }
+
+      .empty-state {
+        color: var(--color-muted);
+        background: var(--color-surface);
+        border: 1px dashed var(--color-border);
+        border-radius: var(--radius);
+        padding: 1.25rem;
+      }
+
+      .booking-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .booking-card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 1rem 1.25rem;
+        box-shadow: var(--shadow);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .booking-time {
+        margin: 0;
+        font-size: var(--text-md);
+        font-weight: 600;
+        color: var(--color-primary-dark);
+      }
+
+      .booking-room {
+        margin: 0.3rem 0 0;
+        color: var(--color-text);
+        font-size: var(--text-sm);
+      }
+
+      .booking-meta {
+        margin: 0.25rem 0 0;
+        color: var(--color-muted);
+        font-size: var(--text-xs);
+      }
+
+      .page-footer {
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--color-border);
+        color: var(--color-muted);
+        font-size: var(--text-sm);
+      }
+
+      .page-footer a {
+        color: var(--color-primary);
+      }
+
+      @media (max-width: 480px) {
+        .page {
+          padding: 1.5rem 1rem 3rem;
+        }
+
+        .booking-card {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .room-card,
+        .booking-card,
+        .btn,
+        .book-toggle summary,
+        .icon.chevron,
+        input,
+        select {
+          transition: none;
+        }
+      }
+    </style>
   </body>
 </html>
