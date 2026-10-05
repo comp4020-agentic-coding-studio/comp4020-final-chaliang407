@@ -43,3 +43,19 @@ export function recordVote(
 export function getVotes(db: Database.Database, roundId: number): Vote[] {
   return db.prepare("SELECT * FROM votes WHERE round_id = ?").all(roundId) as Vote[];
 }
+
+export function hasVoted(db: Database.Database, roundId: number, voterId: string): boolean {
+  const row = db
+    .prepare("SELECT 1 FROM votes WHERE round_id = ? AND voter_id = ?")
+    .get(roundId, voterId);
+  return row !== undefined;
+}
+
+export function tallyVotes(db: Database.Database, roundId: number): Record<VoteAction, number> {
+  const rows = db
+    .prepare("SELECT action, COUNT(*) as count FROM votes WHERE round_id = ? GROUP BY action")
+    .all(roundId) as { action: VoteAction; count: number }[];
+  const tally: Record<VoteAction, number> = { LEFT: 0, JUMP: 0, RIGHT: 0 };
+  for (const row of rows) tally[row.action] = row.count;
+  return tally;
+}

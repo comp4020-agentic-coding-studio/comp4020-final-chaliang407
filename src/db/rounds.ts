@@ -33,3 +33,9 @@ export function getOpenRound(db: Database.Database): Round | undefined {
     .prepare("SELECT * FROM rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
     .get() as Round | undefined;
 }
+
+export function getRecentResolvedRounds(db: Database.Database, limit: number): Round[] {
+  return db
+    .prepare("SELECT * FROM rounds WHERE status = 'resolved' ORDER BY id DESC LIMIT ?")
+    .all(limit) as Round[];
+}

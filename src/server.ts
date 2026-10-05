@@ -1,8 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { marked } from "marked";
+import { getDb } from "./db/client.ts";
+import { handleGetState, handlePostVote } from "./api.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
+const db = getDb();
 
 function send(res: ServerResponse, status: number, contentType: string, body: string): void {
   res.writeHead(status, { "content-type": contentType });
@@ -28,20 +31,51 @@ function renderReadme(): string {
 `;
 }
 
+function sendInternalError(res: ServerResponse): void {
+  if (res.headersSent) return;
+  send(res, 500, "application/json; charset=utf-8", JSON.stringify({ error: "internal error" }));
+}
+
 function handle(req: IncomingMessage, res: ServerResponse): void {
   const url = new URL(req.url ?? "/", "http://localhost");
 
-  if (url.pathname === "/" && req.method === "GET") {
-    send(res, 200, "text/html; charset=utf-8", readFileSync("public/index.html", "utf8"));
-    return;
-  }
+  try {
+    if (url.pathname === "/" && req.method === "GET") {
+      send(res, 200, "text/html; charset=utf-8", readFileSync("public/index.html", "utf8"));
+      return;
+    }
 
-  if (url.pathname === "/readme/" && req.method === "GET") {
-    send(res, 200, "text/html; charset=utf-8", renderReadme());
-    return;
-  }
+    if (url.pathname === "/readme/" && req.method === "GET") {
+      send(res, 200, "text/html; charset=utf-8", renderReadme());
+      return;
+    }
 
-  send(res, 404, "text/plain; charset=utf-8", "not found");
+    if (url.pathname === "/api/state") {
+      if (req.method !== "GET") {
+        send(res, 405, "text/plain; charset=utf-8", "method not allowed");
+        return;
+      }
+      handleGetState(req, res, db);
+      return;
+    }
+
+    if (url.pathname === "/api/vote") {
+      if (req.method !== "POST") {
+        send(res, 405, "text/plain; charset=utf-8", "method not allowed");
+        return;
+      }
+      handlePostVote(req, res, db).catch((err) => {
+        console.error(err);
+        sendInternalError(res);
+      });
+      return;
+    }
+
+    send(res, 404, "text/plain; charset=utf-8", "not found");
+  } catch (err) {
+    console.error(err);
+    sendInternalError(res);
+  }
 }
 
 const server = createServer(handle);
