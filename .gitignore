@@ -2,6 +2,14 @@ node_modules/
 dist/
 *.log
 
+# local dev SQLite database — production's copy lives on the Fly volume,
+# never in the repo
+.data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # editor and OS junk
 .DS_Store
 ._*

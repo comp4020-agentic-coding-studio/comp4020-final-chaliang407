@@ -25,6 +25,7 @@ dockerfile = "Dockerfile"
 
 [env]
 PORT = "8080"
+DATA_DIR = "/data"
 
 [http_service]
 internal_port = 8080
