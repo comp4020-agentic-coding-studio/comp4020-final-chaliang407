@@ -4,9 +4,723 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>One Character, Many Players</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #11141a;
+        --stage-bg: #171c26;
+        --ink: #eef1f6;
+        --muted: #9aa4b5;
+        --accent: #5fb4ff;
+        --locked: #3a4457;
+        --tie: #c7a84a;
+        --ground: #52607a;
+        --platform: #6d7ea0;
+        --char: #ffd166;
+        --char-shade: #c98a2e;
+        --char-face: #2a2118;
+        --focus: #ffffff;
+        --radius: 14px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 1.25rem 1rem 2.5rem;
+        gap: 1rem;
+      }
+
+      header {
+        text-align: center;
+        max-width: 42rem;
+      }
+
+      h1 {
+        font-size: 1.3rem;
+        margin: 0 0 0.25rem;
+        font-weight: 600;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      main {
+        width: 100%;
+        max-width: 42rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.9rem;
+        position: relative;
+      }
+
+      /* ---- round status strip ---- */
+      #round-status {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        padding: 0 0.1rem;
+      }
+
+      #round-status .phase {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      #timer {
+        font-variant-numeric: tabular-nums;
+        font-size: 1rem;
+        color: var(--ink);
+      }
+
+      /* ---- stage ---- */
+      #stage {
+        position: relative;
+        height: clamp(260px, 46vh, 380px);
+        border-radius: var(--radius);
+        background: var(--stage-bg);
+        overflow: hidden;
+        border: 1px solid #262c38;
+      }
+
+      #world {
+        position: absolute;
+        inset: 0;
+      }
+
+      /* shallow "floor" and "elevated platform" strata — just enough fill to
+         read as two levels of ground, not a full scene */
+      #ground-fill {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 22%;
+        background: linear-gradient(to top, #202738, transparent);
+        border-top: 1px solid #2e3650;
+      }
+
+      #platform-fill {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 52%;
+        height: 16%;
+        background: linear-gradient(to top, rgb(109 126 160 / 0.16), transparent);
+      }
+
+      #center-guide {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 1px;
+        background: repeating-linear-gradient(
+          to bottom,
+          rgb(238 241 246 / 0.12) 0 6px,
+          transparent 6px 14px
+        );
+      }
+
+      .lane {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background-repeat: repeat-x;
+        background-image: repeating-linear-gradient(
+          90deg,
+          currentColor 0 3px,
+          transparent 3px 64px
+        );
+        transition: background-position 0.35s ease;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .lane,
+        #character {
+          transition: none !important;
+        }
+      }
+
+      #ground-lane {
+        bottom: 22%;
+        color: var(--ground);
+      }
+
+      #platform-lane {
+        bottom: 52%;
+        color: var(--platform);
+      }
+
+      #character {
+        position: absolute;
+        left: 50%;
+        bottom: calc(22% - 1px);
+        width: 68px;
+        height: 68px;
+        margin-left: -34px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #ffe4a3, var(--char) 55%, var(--char-shade) 100%);
+        box-shadow:
+          0 10px 20px rgb(0 0 0 / 0.4),
+          inset 0 -8px 12px rgb(0 0 0 / 0.18);
+        transition:
+          transform 0.35s ease,
+          bottom 0.35s ease;
+      }
+
+      #character[data-level="1"] {
+        bottom: calc(52% - 1px);
+      }
+
+      #character::before,
+      #character::after {
+        content: "";
+        position: absolute;
+        top: 38%;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--char-face);
+      }
+
+      #character::before {
+        left: 28%;
+      }
+
+      #character::after {
+        left: 65%;
+      }
+
+      #character .face {
+        position: absolute;
+        left: 50%;
+        bottom: 26%;
+        width: 18px;
+        height: 9px;
+        margin-left: -9px;
+        border: 2px solid var(--char-face);
+        border-top: none;
+        border-radius: 0 0 9px 9px;
+        pointer-events: none;
+      }
+
+      /* ---- vote lock state badge over stage ---- */
+      #vote-banner {
+        position: absolute;
+        top: 0.6rem;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgb(0 0 0 / 0.55);
+        border: 1px solid #333c4c;
+        padding: 0.3rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        color: var(--ink);
+        display: none;
+      }
+
+      #vote-banner[data-show="true"] {
+        display: block;
+      }
+
+      /* ---- controls ---- */
+      #controls {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.6rem;
+      }
+
+      button.action {
+        appearance: none;
+        border: none;
+        border-radius: var(--radius);
+        padding: 0.75rem 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--ink);
+        background: #1d222c;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.25rem;
+        transition:
+          background 0.15s ease,
+          transform 0.1s ease;
+      }
+
+      button.action .glyph {
+        font-size: 1.15rem;
+      }
+
+      button.action:hover:not(:disabled) {
+        background: #252c39;
+      }
+
+      button.action:active:not(:disabled) {
+        transform: translateY(1px);
+      }
+
+      button.action:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      button.action[aria-pressed="true"] {
+        background: var(--accent);
+        color: #0b1017;
+      }
+
+      button.action:disabled {
+        background: var(--locked);
+        color: var(--muted);
+        cursor: not-allowed;
+      }
+
+      #lock-note {
+        min-height: 1.2em;
+        font-size: 0.85rem;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      /* ---- reveal overlay ---- */
+      #reveal {
+        position: absolute;
+        inset: 0;
+        background: rgb(10 12 16 / 0.5);
+        backdrop-filter: blur(2px);
+        border-radius: var(--radius);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 1rem;
+      }
+
+      #reveal[data-show="true"] {
+        display: flex;
+      }
+
+      #reveal .card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: center;
+        text-shadow: 0 1px 6px rgb(0 0 0 / 0.8);
+      }
+
+      #reveal .result {
+        font-size: 1.6rem;
+        font-weight: 700;
+      }
+
+      #reveal .result[data-result="TIE"] {
+        color: var(--tie);
+      }
+
+      #reveal .result[data-result="LEFT"],
+      #reveal .result[data-result="RIGHT"],
+      #reveal .result[data-result="JUMP"] {
+        color: var(--accent);
+      }
+
+      #reveal .subtext {
+        color: var(--muted);
+        font-size: 0.85rem;
+        max-width: 24rem;
+      }
+
+      #reveal .tally {
+        display: flex;
+        gap: 1.1rem;
+        font-size: 0.95rem;
+        margin-top: 0.2rem;
+      }
+
+      #reveal .tally div {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.15rem;
+      }
+
+      #reveal .tally .n {
+        font-weight: 700;
+        font-size: 1.1rem;
+      }
+
+      #reveal .tally .lbl {
+        color: var(--muted);
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      /* ---- recent trace ---- */
+      #trace {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        justify-content: center;
+      }
+
+      #trace h2 {
+        width: 100%;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin: 0.2rem 0 0.1rem;
+        font-weight: 600;
+      }
+
+      .trace-chip {
+        font-size: 0.78rem;
+        color: var(--muted);
+        background: #1b212c;
+        border: 1px solid #262c38;
+        border-radius: 999px;
+        padding: 0.25rem 0.6rem;
+        white-space: nowrap;
+      }
+
+      .trace-chip b {
+        color: var(--ink);
+      }
+
+      .trace-chip[data-result="TIE"] b {
+        color: var(--tie);
+      }
+
+      #conn-note {
+        font-size: 0.75rem;
+        color: var(--muted);
+        min-height: 1em;
+        text-align: center;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @media (max-width: 420px) {
+        #stage {
+          height: 220px;
+        }
+
+        button.action {
+          padding: 0.65rem 0.3rem;
+          font-size: 0.85rem;
+        }
+      }
+    </style>
   </head>
   <body>
-    <h1>One Character, Many Players</h1>
-    <p>Scaffold stage — voting goes here next.</p>
+    <header>
+      <h1>One Character, Many Players</h1>
+      <p>Every visitor votes. The crowd moves one shared character together.</p>
+    </header>
+
+    <main>
+      <div id="round-status">
+        <span class="phase" id="phase-label">Loading…</span>
+        <span id="timer"></span>
+      </div>
+
+      <div id="stage">
+        <div id="world">
+          <div id="ground-fill" aria-hidden="true"></div>
+          <div id="platform-fill" aria-hidden="true"></div>
+          <div id="center-guide" aria-hidden="true"></div>
+          <div id="platform-lane" class="lane" aria-hidden="true"></div>
+          <div id="ground-lane" class="lane" aria-hidden="true"></div>
+          <div id="character" data-level="0" aria-hidden="true">
+            <span class="face"></span>
+          </div>
+        </div>
+        <div id="vote-banner" role="status"></div>
+        <div id="reveal" aria-hidden="true">
+          <div class="card">
+            <div class="result" id="reveal-result">—</div>
+            <div class="subtext" id="reveal-subtext"></div>
+            <div class="tally">
+              <div><span class="n" id="tally-left">0</span><span class="lbl">Left</span></div>
+              <div><span class="n" id="tally-jump">0</span><span class="lbl">Jump</span></div>
+              <div><span class="n" id="tally-right">0</span><span class="lbl">Right</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="controls">
+        <button type="button" class="action" id="btn-left" data-action="LEFT">
+          <span class="glyph" aria-hidden="true">←</span>
+          <span>Left</span>
+        </button>
+        <button type="button" class="action" id="btn-jump" data-action="JUMP">
+          <span class="glyph" aria-hidden="true">↑</span>
+          <span>Jump</span>
+        </button>
+        <button type="button" class="action" id="btn-right" data-action="RIGHT">
+          <span class="glyph" aria-hidden="true">→</span>
+          <span>Right</span>
+        </button>
+      </div>
+      <div id="lock-note"></div>
+
+      <div id="trace" aria-hidden="false">
+        <h2>Recent rounds</h2>
+      </div>
+
+      <div id="conn-note"></div>
+      <div id="announce" class="sr-only" role="status" aria-live="polite"></div>
+    </main>
+
+    <script type="module">
+      const STEP_PX = 64;
+      const POLL_MS = 1200;
+      const REVEAL_MS = 1200;
+
+      const el = {
+        phase: document.getElementById("phase-label"),
+        timer: document.getElementById("timer"),
+        ground: document.getElementById("ground-lane"),
+        platform: document.getElementById("platform-lane"),
+        character: document.getElementById("character"),
+        voteBanner: document.getElementById("vote-banner"),
+        reveal: document.getElementById("reveal"),
+        revealResult: document.getElementById("reveal-result"),
+        revealSubtext: document.getElementById("reveal-subtext"),
+        tallyLeft: document.getElementById("tally-left"),
+        tallyJump: document.getElementById("tally-jump"),
+        tallyRight: document.getElementById("tally-right"),
+        btnLeft: document.getElementById("btn-left"),
+        btnJump: document.getElementById("btn-jump"),
+        btnRight: document.getElementById("btn-right"),
+        lockNote: document.getElementById("lock-note"),
+        trace: document.getElementById("trace"),
+        connNote: document.getElementById("conn-note"),
+        announce: document.getElementById("announce"),
+      };
+
+      const buttons = { LEFT: el.btnLeft, JUMP: el.btnJump, RIGHT: el.btnRight };
+
+      /** @type {{roundId: number|null, votedAction: string|null, revealTimer: number|null, resolvesAt: number|null}} */
+      const client = {
+        roundId: null,
+        votedAction: null,
+        revealTimer: null,
+        resolvesAt: null,
+      };
+
+      function announce(text) {
+        el.announce.textContent = text;
+      }
+
+      function renderCharacter(character) {
+        el.character.style.transform = `translateX(${character.position * STEP_PX}px)`;
+        el.character.dataset.level = String(character.level);
+        const offset = `${-(character.position * STEP_PX)}px 0`;
+        el.ground.style.backgroundPosition = offset;
+        el.platform.style.backgroundPosition = offset;
+      }
+
+      function renderControlsLocked(locked, votedAction) {
+        for (const [action, btn] of Object.entries(buttons)) {
+          btn.disabled = locked;
+          btn.setAttribute("aria-pressed", String(locked && action === votedAction));
+        }
+        if (locked) {
+          el.lockNote.textContent = votedAction
+            ? `Locked in: ${votedAction}. Waiting for the round to end…`
+            : "You already voted this round. Waiting for the round to end…";
+          el.voteBanner.textContent = "Vote locked";
+          el.voteBanner.dataset.show = "true";
+        } else {
+          el.lockNote.textContent = "Pick one. You can't change it once the round locks it in.";
+          el.voteBanner.dataset.show = "false";
+        }
+      }
+
+      function renderTimer() {
+        if (client.resolvesAt == null) {
+          el.timer.textContent = "";
+          return;
+        }
+        const remainingMs = client.resolvesAt - Date.now();
+        if (remainingMs <= 0) {
+          el.timer.textContent = "resolving…";
+          return;
+        }
+        el.timer.textContent = `${(remainingMs / 1000).toFixed(1)}s left`;
+      }
+
+      // A round with zero votes cast resolves to "TIE" internally (the
+      // lifecycle needs *some* result to roll forward on), but nobody
+      // actually failed to coordinate — there was no round to coordinate on.
+      // Distinguish the two from the tally itself, never from result text.
+      function totalVotes(tally) {
+        return tally.LEFT + tally.JUMP + tally.RIGHT;
+      }
+
+      function renderTrace(recentRounds) {
+        el.trace.querySelectorAll(".trace-chip").forEach((n) => n.remove());
+        for (const round of recentRounds) {
+          if (totalVotes(round.tally) === 0) continue;
+          const chip = document.createElement("span");
+          chip.className = "trace-chip";
+          chip.dataset.result = round.result;
+          const t = round.tally;
+          chip.innerHTML = `<b>${round.result}</b> &middot; L${t.LEFT} J${t.JUMP} R${t.RIGHT}`;
+          el.trace.appendChild(chip);
+        }
+      }
+
+      function showReveal(resolvedRound) {
+        if (client.revealTimer) {
+          clearTimeout(client.revealTimer);
+        }
+        const t = resolvedRound.tally;
+        el.revealResult.textContent = resolvedRound.result === "TIE" ? "No majority — TIE" : resolvedRound.result;
+        el.revealResult.dataset.result = resolvedRound.result;
+        el.revealSubtext.textContent =
+          resolvedRound.result === "TIE"
+            ? "The group didn't agree. The character held its ground."
+            : "The crowd agreed. The character moved.";
+        el.tallyLeft.textContent = String(t.LEFT);
+        el.tallyJump.textContent = String(t.JUMP);
+        el.tallyRight.textContent = String(t.RIGHT);
+        el.reveal.dataset.show = "true";
+        el.reveal.setAttribute("aria-hidden", "false");
+
+        announce(
+          resolvedRound.result === "TIE"
+            ? `Round resolved: tie. No majority. Final votes — left ${t.LEFT}, jump ${t.JUMP}, right ${t.RIGHT}.`
+            : `Round resolved: ${resolvedRound.result}. Final votes — left ${t.LEFT}, jump ${t.JUMP}, right ${t.RIGHT}.`,
+        );
+
+        client.revealTimer = window.setTimeout(() => {
+          el.reveal.dataset.show = "false";
+          el.reveal.setAttribute("aria-hidden", "true");
+        }, REVEAL_MS);
+      }
+
+      async function castVote(action) {
+        renderControlsLocked(true, action);
+        client.votedAction = action;
+        try {
+          const res = await fetch("/api/vote", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action }),
+          });
+          if (!res.ok && res.status !== 409) {
+            // Vote didn't actually take (invalid/oversized/server error) — unlock so
+            // the player isn't stuck locked out with nothing recorded.
+            client.votedAction = null;
+            renderControlsLocked(false, null);
+            el.connNote.textContent = "That vote didn't go through — try again.";
+          } else {
+            el.connNote.textContent = "";
+            announce(`You voted ${action}. Waiting for the round to end.`);
+          }
+        } catch {
+          client.votedAction = null;
+          renderControlsLocked(false, null);
+          el.connNote.textContent = "Couldn't reach the server — try again.";
+        }
+      }
+
+      function wireControls() {
+        for (const [action, btn] of Object.entries(buttons)) {
+          btn.addEventListener("click", () => {
+            if (btn.disabled) return;
+            castVote(action);
+          });
+        }
+
+        document.addEventListener("keydown", (e) => {
+          const map = { ArrowLeft: "LEFT", ArrowRight: "RIGHT", ArrowUp: "JUMP", " ": "JUMP" };
+          const action = map[e.key];
+          if (!action) return;
+          const btn = buttons[action];
+          if (btn.disabled) return;
+          e.preventDefault();
+          castVote(action);
+        });
+      }
+
+      async function poll() {
+        try {
+          const res = await fetch("/api/state", { cache: "no-store" });
+          if (!res.ok) throw new Error(`state ${res.status}`);
+          const state = await res.json();
+          el.connNote.textContent = "";
+
+          renderCharacter(state.character);
+          renderTrace(state.recentRounds);
+
+          const newRoundId = state.round.id;
+          if (client.roundId !== null && newRoundId !== client.roundId) {
+            const justResolved = state.recentRounds.find((r) => r.id === client.roundId);
+            if (justResolved && totalVotes(justResolved.tally) > 0) showReveal(justResolved);
+            client.votedAction = null;
+          }
+          client.roundId = newRoundId;
+          client.resolvesAt = new Date(state.round.resolvesAt).getTime();
+
+          el.phase.textContent = "A round is open — decide together";
+          renderControlsLocked(state.round.hasVoted, state.round.hasVoted ? client.votedAction : null);
+        } catch {
+          el.connNote.textContent = "Connection trouble — retrying…";
+        }
+      }
+
+      function tick() {
+        renderTimer();
+        if (client.resolvesAt !== null && client.resolvesAt - Date.now() <= 0) {
+          poll();
+        }
+      }
+
+      wireControls();
+      poll();
+      setInterval(poll, POLL_MS);
+      setInterval(tick, 250);
+    </script>
   </body>
 </html>
