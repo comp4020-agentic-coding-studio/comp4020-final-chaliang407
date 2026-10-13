@@ -20,16 +20,15 @@ nobody failed to coordinate, because nobody was there.
 ## Real-time, without revealing more
 
 A change one player makes is designed to reach every other open tab within
-about a second, with no reload: the server pushes a content-free "a round
-resolved" signal over Server-Sent Events, and each browser answers it by
+about a second, with no reload: the server pushes a content-free "round
+resolved" signal over Server-Sent Events, and each browser answers by
 fetching its own authoritative state. That target is checked by automated
-tests against the app running locally; it hasn't yet been deployed or
-confirmed in production. Speed and content stay separate here — going
-real-time didn't mean sending more. The running tally of an open round stays
-exactly as hidden as before; only the moment of finding out got faster.
-`docs/adr/` records both that decision and the push channel's own open
-questions, including what only a real deployment can settle (Fly's machine
-auto-stop behaviour with a long-lived connection open).
+tests locally; it hasn't yet been deployed or confirmed in production. Speed
+and content stay separate — going real-time didn't mean sending more. An open
+round's tally stays exactly as hidden as before; only the moment of finding
+out got faster. `docs/adr/` records that decision and the push channel's open
+questions, including what only a real deployment can settle (Fly's auto-stop
+behaviour with a long-lived connection open).
 
 ## What "good" means here
 
