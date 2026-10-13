@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 import { marked } from "marked";
 import { getDb } from "./db/client.ts";
 import { handleGetState, handlePostVote } from "./api.ts";
+import { createEventHub } from "./http/events.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const db = getDb();
+const eventHub = createEventHub(db);
 
 function send(res: ServerResponse, status: number, contentType: string, body: string): void {
   res.writeHead(status, { "content-type": contentType });
@@ -55,7 +57,7 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
         send(res, 405, "text/plain; charset=utf-8", "method not allowed");
         return;
       }
-      handleGetState(req, res, db);
+      handleGetState(req, res, db, eventHub.notifyResolved);
       return;
     }
 
@@ -64,10 +66,19 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
         send(res, 405, "text/plain; charset=utf-8", "method not allowed");
         return;
       }
-      handlePostVote(req, res, db).catch((err) => {
+      handlePostVote(req, res, db, eventHub.notifyResolved).catch((err) => {
         console.error(err);
         sendInternalError(res);
       });
+      return;
+    }
+
+    if (url.pathname === "/api/events") {
+      if (req.method !== "GET") {
+        send(res, 405, "text/plain; charset=utf-8", "method not allowed");
+        return;
+      }
+      eventHub.handleConnection(req, res);
       return;
     }
 
@@ -82,3 +93,12 @@ const server = createServer(handle);
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`listening on 0.0.0.0:${PORT}`);
 });
+
+eventHub.scheduleDeadlineTimer();
+
+function shutdown(): void {
+  eventHub.close();
+  server.close();
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

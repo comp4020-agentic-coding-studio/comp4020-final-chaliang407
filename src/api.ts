@@ -11,15 +11,43 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-// GET /api/state: the open round's tallies are never included here — only
-// `hasVoted` for *this* voter — so the hidden-vote rule is enforced by what
-// this function builds, not left to a future UI to hide.
-export function handleGetState(req: IncomingMessage, res: ServerResponse, db: Database.Database): void {
-  const voterId = getOrCreateVoterId(req, res);
-  const round = ensureCurrentRound(db);
+export interface StatePayload {
+  character: { position: number; level: number };
+  round: {
+    id: number;
+    opensAt: string;
+    resolvesAt: string;
+    status: string;
+    hasVoted: boolean;
+  };
+  recentRounds: ReturnType<typeof getRecentTrace>;
+}
+
+// The one place the open round's tallies are allowed to be read at all — and
+// they never are. Only `hasVoted` for *this* voter crosses the wire for the
+// open round; `recentRounds` carries tallies, but only for already-resolved
+// rounds. This is the only function that builds a state response, so the
+// hidden-vote rule can't drift between callers — there's only one caller.
+//
+// The SSE layer (src/http/events.ts) never calls this function and carries
+// no state of its own: it broadcasts a content-free "a round resolved" event
+// with nothing to leak, and it's each browser's own subsequent GET
+// /api/state — landing here, same as any other request — that fetches its
+// real, per-voter, hidden-tally-respecting state.
+//
+// `onResolved` is threaded through to `ensureCurrentRound` so that whichever
+// request happens to observe a round go overdue — this one included — is the
+// one that fires the real-time broadcast, with the lazy resolve-on-read
+// behaviour this project depends on left completely unchanged.
+export function buildStatePayload(
+  db: Database.Database,
+  voterId: string,
+  onResolved?: () => void,
+): StatePayload {
+  const round = ensureCurrentRound(db, onResolved);
   const character = getCharacter(db);
 
-  sendJson(res, 200, {
+  return {
     character: { position: character.position, level: character.level },
     round: {
       id: round.id,
@@ -29,7 +57,17 @@ export function handleGetState(req: IncomingMessage, res: ServerResponse, db: Da
       hasVoted: hasVoted(db, round.id, voterId),
     },
     recentRounds: getRecentTrace(db, 5),
-  });
+  };
+}
+
+export function handleGetState(
+  req: IncomingMessage,
+  res: ServerResponse,
+  db: Database.Database,
+  onResolved?: () => void,
+): void {
+  const voterId = getOrCreateVoterId(req, res);
+  sendJson(res, 200, buildStatePayload(db, voterId, onResolved));
 }
 
 // The only body this endpoint ever expects is {"action":"LEFT"|"JUMP"|"RIGHT"}
@@ -63,6 +101,7 @@ export async function handlePostVote(
   req: IncomingMessage,
   res: ServerResponse,
   db: Database.Database,
+  onResolved?: () => void,
 ): Promise<void> {
   const voterId = getOrCreateVoterId(req, res);
 
@@ -86,7 +125,7 @@ export async function handlePostVote(
   const action = body !== null && typeof body === "object" ? (body as Record<string, unknown>).action : undefined;
 
   try {
-    const { round } = castVote(db, voterId, action);
+    const { round } = castVote(db, voterId, action, onResolved);
     sendJson(res, 200, {
       round: { id: round.id, opensAt: round.opens_at, resolvesAt: round.resolves_at },
     });

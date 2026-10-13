@@ -30,7 +30,12 @@ function isDue(round: Round): boolean {
 // is synchronous and Node is single-threaded, so two requests in this one
 // process can't actually interleave mid-resolution, but the guard keeps this
 // correct under a future multi-process deployment too, and costs nothing here.
-function resolveRound(db: Database.Database, round: Round): Round {
+// `didResolve` tells the caller whether *this* call is the one that actually
+// performed the resolution, vs. losing the (today-impossible, but guarded
+// anyway) race and just rolling a stale round forward — that's what lets
+// every caller share one real-time broadcast without double-firing it.
+function resolveRound(db: Database.Database, round: Round): { round: Round; didResolve: boolean } {
+  let didResolve = false;
   const txn = db.transaction((r: Round): Round => {
     const claimed = db
       .prepare("UPDATE rounds SET status = 'resolved' WHERE id = ? AND status = 'open'")
@@ -47,9 +52,10 @@ function resolveRound(db: Database.Database, round: Round): Round {
       r.id,
     );
     applyRoundResult(db, result);
+    didResolve = true;
     return createRound(db);
   });
-  return txn(round);
+  return { round: txn(round), didResolve };
 }
 
 // Ensures an open round exists and that it's actually still within its
@@ -57,16 +63,28 @@ function resolveRound(db: Database.Database, round: Round): Round {
 // timer (the Fly machine this runs on can be stopped between requests, so a
 // timer would just be lost). In practice this loops at most once: a freshly
 // created round's window starts from "now", so it can't already be due.
-export function ensureCurrentRound(db: Database.Database): Round {
+//
+// `onResolved` fires once per round actually resolved here. Every path that
+// can observe a due round — a vote, a state poll, and the real-time layer's
+// proactive deadline timer — routes through this one function, so whichever
+// caller happens to be the one that resolves it is the one that notifies.
+export function ensureCurrentRound(db: Database.Database, onResolved?: () => void): Round {
   let round = getOpenRound(db) ?? createRound(db);
   while (isDue(round)) {
-    round = resolveRound(db, round);
+    const { round: next, didResolve } = resolveRound(db, round);
+    if (didResolve) onResolved?.();
+    round = next;
   }
   return round;
 }
 
-export function castVote(db: Database.Database, voterId: string, action: unknown): { round: Round } {
-  const round = ensureCurrentRound(db);
+export function castVote(
+  db: Database.Database,
+  voterId: string,
+  action: unknown,
+  onResolved?: () => void,
+): { round: Round } {
+  const round = ensureCurrentRound(db, onResolved);
   if (typeof action !== "string" || !ACTIONS.includes(action as VoteAction)) {
     throw new InvalidActionError(action);
   }

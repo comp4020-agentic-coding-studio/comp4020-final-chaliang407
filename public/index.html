@@ -512,7 +512,10 @@
 
     <script type="module">
       const STEP_PX = 64;
-      const POLL_MS = 1200;
+      // EventSource delivers the moment-to-moment sync now; this is only a
+      // slow backstop in case a connection silently stalls in a way the
+      // browser's own EventSource reconnect doesn't catch.
+      const POLL_MS = 15000;
       const REVEAL_MS = 1200;
 
       const el = {
@@ -539,12 +542,24 @@
 
       const buttons = { LEFT: el.btnLeft, JUMP: el.btnJump, RIGHT: el.btnRight };
 
-      /** @type {{roundId: number|null, votedAction: string|null, revealTimer: number|null, resolvesAt: number|null}} */
+      /** @type {{roundId: number|null, votedAction: string|null, revealTimer: number|null, resolvesAt: number|null, pollInFlight: boolean, pollQueued: boolean}} */
       const client = {
         roundId: null,
         votedAction: null,
         revealTimer: null,
         resolvesAt: null,
+        // poll() can now be triggered from several independent sources — the
+        // slow backstop interval, tick()'s own deadline check, an SSE
+        // 'resolved' event, and an EventSource reconnect — which land within
+        // the same ~250ms window at essentially every round boundary.
+        // `pollInFlight`/`pollQueued` serialize these into at most one
+        // request in flight plus one more queued right behind it, so two
+        // overlapping calls can never both read the old `roundId` and both
+        // decide to fire a reveal for the same resolved round, and a request
+        // can never apply its result out of order after a later one already
+        // ran (the next poll only starts once this one has fully applied).
+        pollInFlight: false,
+        pollQueued: false,
       };
 
       function announce(text) {
@@ -684,7 +699,21 @@
         });
       }
 
+      // Collapses overlapping triggers (backstop interval, tick()'s deadline
+      // check, an SSE 'resolved' event, an EventSource reconnect) into at
+      // most one in-flight request plus one more queued to run immediately
+      // after it finishes. Without this, two calls landing within the same
+      // tick (routine at a round boundary, now that SSE and tick() can both
+      // fire there) could both read the old client.roundId before either
+      // wrote the new one, and both independently decide to show a reveal
+      // for the same resolved round.
       async function poll() {
+        if (client.pollInFlight) {
+          client.pollQueued = true;
+          return;
+        }
+        client.pollInFlight = true;
+
         try {
           const res = await fetch("/api/state", { cache: "no-store" });
           if (!res.ok) throw new Error(`state ${res.status}`);
@@ -707,6 +736,12 @@
           renderControlsLocked(state.round.hasVoted, state.round.hasVoted ? client.votedAction : null);
         } catch {
           el.connNote.textContent = "Connection trouble — retrying…";
+        } finally {
+          client.pollInFlight = false;
+          if (client.pollQueued) {
+            client.pollQueued = false;
+            poll();
+          }
         }
       }
 
@@ -717,7 +752,40 @@
         }
       }
 
+      // The server pushes one content-free "resolved" event per round — no
+      // action, no tally, nothing beyond "something changed" — specifically
+      // so that live open-round vote totals are never something this client
+      // could even receive, let alone render. Every event just triggers the
+      // same poll() that already builds the authoritative, per-voter view.
+      //
+      // onopen fires on the *first* connection and on every browser-initiated
+      // reconnect alike (EventSource retries on its own after a drop), so
+      // using it to call poll() is what makes reconnect recovery immediate:
+      // whatever happened while this tab was disconnected — a round
+      // resolving, a vote state change — is picked up the moment the stream
+      // comes back, rather than waiting for the next 'resolved' event or the
+      // slow backstop poll.
+      function wireEvents() {
+        const source = new EventSource("/api/events");
+        source.addEventListener("resolved", () => poll());
+        source.onopen = () => {
+          el.connNote.textContent = "";
+          poll();
+        };
+        source.onerror = () => {
+          // The browser retries EventSource connections on its own; the slow
+          // poll backstop keeps state fresh in the meantime so a stalled
+          // connection is never worse than C8's old fixed-interval polling.
+          el.connNote.textContent = "Live updates interrupted — retrying…";
+        };
+      }
+
       wireControls();
+      wireEvents();
+      // Polled explicitly here too, not left to wireEvents()'s onopen alone —
+      // first paint shouldn't wait on the SSE handshake, and polling twice in
+      // quick succession is harmless now that poll() serializes overlapping
+      // calls (see its own comment above).
       poll();
       setInterval(poll, POLL_MS);
       setInterval(tick, 250);
