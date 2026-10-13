@@ -1,108 +1,106 @@
-# Process overview
+# Process overview: C8 → C9
 
-This is the C8 state of One Character, Many Players: a stranger can visit the
-deployed app, vote, and find their trace still there later. Everything below
-is the actual path from the brief to that point, not a feature list.
+C8 (documented in the previous version of this file, preserved in git history
+at [`b70751b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/b70751b35176ea5ab3a4d456fcc0a8f06dcbba0b))
+left the app with SQLite persistence, anonymous voting, hidden open-round
+tallies, and a browser that polled for state. C9's brief is specific about
+what was still missing: a change one person makes has to reach every other
+open session within about a second, with no reload, and one decision about
+multi-player behaviour has to be made and written down.
 
-## Stack: minimal, before the shared-state problem was understood
+## Read-only audit before writing any code
 
-I started from a deliberately small stack rather than bringing in a larger
-framework before I understood what the shared-state problem actually
-required:
-[`1e7cfdf`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/1e7cfdf5e5ee8f09b35e1c0513918754848f31aa)
-scaffolds a plain `node:http` server, run directly as TypeScript, with no
-Express, no bundler, no Astro. The brief's core mechanic — one shared
-character, votes hidden until a round closes, a majority or a tie — doesn't
-need routing middleware or a templating layer; it needs correct state and a
-correct resolution rule. Adding a framework first would have meant designing
-around its request lifecycle before I knew what the lifecycle actually had
-to do.
+Rather than start implementing immediately, the first step was a read-only
+technical and design audit of the C8 codebase against the C9 brief:
+`src/server.ts`, `src/api.ts`, `src/game/lifecycle.ts`, `src/db/`, and
+`public/index.html`'s polling logic specifically. That audit established the
+actual failure mode in C8's polling: `POLL_MS = 1200` is usually fast, but a
+bystander tab's poll is phase-unsynchronized with when a round actually
+resolves, and `fly.toml`'s `auto_stop_machines`/`min_machines_running = 0`
+means a poll can land on a cold-starting machine with no bound on the delay.
+"Usually under a second" isn't the same claim as "reliably under a second,"
+and the brief asks for the latter. The audit also compared SSE, WebSockets,
+and faster polling against this specific architecture: this app has no
+client→client or even client→server push need beyond the existing
+`POST /api/vote`, so WebSockets' full duplex protocol buys nothing and only
+adds a new dependency, manual reconnect/backoff logic, and more surface to
+keep consistent with SQLite; fast polling is a smaller version of the same
+phase-misalignment problem, not a fix for it. SSE matched the actual
+direction of the data (server to client only), needed no new dependency on
+top of plain `node:http`, and gave reconnection for free via the browser's
+own `EventSource`. Before any code was written, that recommendation was
+checked against an explicit constraint carried over from the brief: receiving
+updates quickly is not the same claim as showing live vote totals, and the
+two had to stay separate through the whole design, not just at the end.
 
-## Persistence came before gameplay, not after
+## Implementation, in one deliberate commit
 
-The brief requires state that survives a session, a restart, or a redeploy,
-and Fly's own machine model makes that non-negotiable rather than a nice-to-
-have: this app's machine can stop between requests. So persistence came
-early, not as a later addition bolted onto a working prototype:
-[`4a4b4b0`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/4a4b4b0004d92eb92094341e4630a2179f13aa23)
-adds the SQLite schema and the `character`/`rounds`/`votes` tables on the Fly
-volume, before any voting logic exists to use them. The trade-off I accepted
-was no in-memory shortcut at all during early development, even though
-nothing yet depended on surviving a restart — I'd rather the storage model be
-right from the first commit than retrofit it once gameplay already assumed a
-live process.
+The real-time layer landed in
+[`a7fad4e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/a7fad4e6437ad1d458b172c8413dc7cdec2de36c):
+`src/api.ts` gained `buildStatePayload`, extracted so `GET /api/state` and
+nothing else is the one place tallies can be read, and so a future caller
+can't accidentally duplicate the hidden-vote logic; `src/http/events.ts` is
+new, a `GET /api/events` SSE endpoint whose broadcast payload is literally
+`data: {}` — no action, no count, nothing to leak, by construction rather
+than by convention; `src/game/lifecycle.ts`'s `ensureCurrentRound` now
+accepts an `onResolved` callback, fired once per round actually resolved,
+threaded through from every caller that can observe a round go overdue — a
+vote, a state poll, or the real-time layer's own proactive deadline timer;
+and `public/index.html` switched its primary sync mechanism from
+`setInterval(poll, 1200)` to an `EventSource` connection, with a slow 15-
+second poll kept as a backstop. `spec/realtime.test.ts` was added in the same
+commit: five tests run against the real running app (not a mock), covering
+two-client propagation timing, tally/participation-leakage checks, duplicate
+and simultaneous votes, reconnect recovery, and the empty-round/genuine-tie
+distinction.
 
-## The voting lifecycle is where the brief's actual constraints live
+## What the review passes found and fixed
 
-[`982ca36`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/982ca361ca398b4a2a80767afb701509d93b3592)
-is the commit that encodes the project's real rules, not just its plumbing:
-anonymous voter identity in a cookie, one vote per voter per round enforced
-by a database constraint rather than application logic alone, hidden tallies
-for the open round (the state endpoint only ever tells a voter whether *they*
-voted, never the count), a unique majority executing the action, and a tie
-leaving the character still. Resolution is lazy — computed from stored
-timestamps the next time any request arrives — rather than a timer, because
-a timer would simply be lost whenever the machine stops. This is the one
-decision in the project I'd defend hardest: it means the core mechanic has no
-dependency on the process staying alive, which the stack choice above assumed
-and this commit then actually had to deliver on.
+Before committing, the implementation went through a focused correctness
+review against exactly the risk the design decision was meant to guard
+against, plus the ordinary hazards of adding a long-lived connection to a
+single-process Node server. Three real issues surfaced and were fixed in the
+same commit, not left for later: first, the deadline timer and broadcast path
+had no exception handling, so a single broken socket write could have thrown
+out of a `setTimeout` callback and crashed the whole process — every
+connection wrapped in try/catch so one bad client can only drop itself.
+Second, a burst of overdue rounds resolving at once (realistic after Fly
+stops the machine across more than one round's duration) would have fired one
+broadcast per backlogged round; the hub now coalesces any number of
+resolutions arriving before the next microtask into exactly one notification
+and one timer rearm. Third, the browser's `EventSource` reconnecting after a
+drop fired no resync on its own — `onopen` now triggers an immediate state
+refetch, on both the first connection and every reconnect, which is what
+actually makes reconnect recovery "immediate" rather than "eventually, next
+poll." A fourth, smaller issue — overlapping `poll()` calls from the backstop
+timer, the SSE event, and the round-deadline tick landing in the same window
+and both deciding to show a round reveal — was fixed with an in-flight/queued
+guard around `poll()` itself. The test suite was correspondingly strengthened
+to check for exactly one resolution notification per round and for identical
+SSE cadence between empty and populated rounds, so a participation signal
+can't leak through event *timing* even though it can't leak through content
+either.
 
-## Building the interface exposed problems the API alone didn't
+## What's deliberately unverified
 
-The playable UI went on top of that lifecycle once it existed, not before.
-Manual inspection of the running app — not a design decided in advance — is
-what shaped the rest of the work. First, the result reveal was too visually
-dominant: it held the screen for about four seconds and obscured the shared
-world it was supposed to be revealing something about, so I shortened it to
-roughly 1.2 seconds. Second, and more importantly, the same inspection
-surfaced a semantic bug, not a cosmetic one: a round with zero votes cast was
-being shown exactly like a real tie — "No majority — TIE" — which misrepresents
-absence as disagreement. I corrected this so a zero-vote round still resolves
-internally (the lifecycle keeps rolling forward) but produces no reveal and
-is excluded from the visible round history, while a genuine tie — votes cast,
-no unique majority, e.g. one LEFT and one RIGHT — still shows and is kept.
-Both of these were local iterations before anything was committed;
-[`e756602`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/e756602328bd3fac3a59aa429d1207ed427cda71)
-is the single commit that carries the corrected end state, not a record of
-the intermediate, wrong one. I'm being explicit about that here because the
-commit history alone would only show the fix existing, not the mistake it
-replaced.
+Two things are explicitly not claimed as done. No browser-automation tool
+(Playwright, Puppeteer, or similar) is installed in this project, so
+`spec/realtime.test.ts` verifies the server's HTTP/SSE contract directly —
+exactly what a browser would receive on the wire — but does not drive
+`public/index.html` through an actual browser; the frontend fixes were
+checked by reading the script and by manually exercising the running app.
+Second, whether Fly's proxy treats an open SSE connection as active traffic
+for `auto_stop_machines` purposes has not been confirmed, because that can
+only be observed against a real deployment and this round of work stopped
+before deploying. Both gaps are recorded, not glossed over, in
+`docs/adr/0002-sse-for-realtime-delivery.md`.
 
-## What that bug sharpened
+## The one documented multiplayer decision
 
-Distinguishing an empty round from a real tie forced a clearer answer to what
-this project is actually for. If a tie looked like a bug, or silence looked
-like conflict, the one signal the project depends on — whether strangers who
-can't talk to each other coordinated, disagreed, or simply weren't there —
-would be lost. That's the reasoning behind the definition
-[`fbb8a08`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/fbb8a084b1662b05871fb17055b74e2813a0e22f)
-records in `README.md`: good means making coordination visible, including
-failure to coordinate. It wasn't a definition I had before writing the game;
-it's a definition the empty-round/tie distinction made necessary.
-
-## Verifying persistence for real
-
-Before treating the persistence model as done, I verified it directly rather
-than inferring it from the code: cast a vote that produced a meaningful,
-distinguishable character-state change, killed the running server process,
-restarted it with the ordinary `pnpm start` command, and confirmed the state
-was unchanged on the first request afterward — including a round that had
-become due while the process was down resolving itself lazily, exactly as
-designed, with no timer to have lost. I then cast a further vote to confirm
-the app kept working normally, not just that it remembered something static.
-This checks the mechanism built in
-[`4a4b4b0`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/4a4b4b0004d92eb92094341e4630a2179f13aa23)
-and
-[`982ca36`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/982ca361ca398b4a2a80767afb701509d93b3592);
-it isn't itself a commit, so there's nothing to cite for the verification
-step beyond the mechanism it tested.
-
-## What C8 deliberately doesn't claim
-
-This is proof of life, not the finished project. The browser polls for state
-rather than receiving a push; WebSockets or server-sent events aren't built,
-and polling is a known, temporary stand-in. There is no level yet — no
-obstacles, no branching paths, no points where LEFT, JUMP, and RIGHT are
-different reasonable strategies rather than just movement. The actions move
-a character along an open lane; making them strategically meaningful is
-later work, not something already shipped.
+`docs/adr/0001-hidden-votes-visible-outcomes.md` records the decision this
+crit asked for: going real-time changed *when* a player learns a round
+resolved, not *what* they're allowed to see while it's open. The alternative
+of surfacing a live running tally, or even a content-free "someone just
+voted" pulse, was considered and rejected, because either would let players
+react to each other's choices instead of deciding independently — which is
+the one thing C8's hidden-tally design was already built to prevent.
