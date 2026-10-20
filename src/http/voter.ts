@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import { logIdentityCreated } from "../logging.ts";
 
 const COOKIE_NAME = "voter_id";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -28,5 +29,6 @@ export function getOrCreateVoterId(req: IncomingMessage, res: ServerResponse): s
     "set-cookie",
     `${COOKIE_NAME}=${id}; Max-Age=${MAX_AGE_SECONDS}; Path=/; HttpOnly; SameSite=Lax`,
   );
+  logIdentityCreated(id);
   return id;
 }

@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type Database from "better-sqlite3";
 import { ensureCurrentRound } from "../game/lifecycle.ts";
+import { getOrCreateVoterId } from "./voter.ts";
+import { logSseConnected, logSseDisconnected } from "../logging.ts";
 
 // Keep connections alive through any intermediary (a browser, a proxy, or
 // Fly's own) that might otherwise time out an idle-looking HTTP response.
@@ -139,6 +141,13 @@ export function createEventHub(db: Database.Database): EventHub {
   }
 
   function handleConnection(req: IncomingMessage, res: ServerResponse): void {
+    // Same identity resolution as every other endpoint (src/http/voter.ts) —
+    // reads/sets the same voter_id cookie, so a browser's SSE connection and
+    // its GET /api/state and POST /api/vote calls all log under one label.
+    // This is purely for log correlation: the hub still carries no per-voter
+    // state in `connections`, and the broadcast payload is unaffected.
+    const voterId = getOrCreateVoterId(req, res);
+
     res.writeHead(200, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache, no-transform",
@@ -151,6 +160,7 @@ export function createEventHub(db: Database.Database): EventHub {
     // without handing EventSource an onmessage payload to parse.
     res.write(": connected\n\n");
     connections.add(res);
+    logSseConnected(voterId, connections.size);
 
     // Symmetric cleanup: a dropped connection can surface as the request
     // closing, the response closing, or the response erroring, depending on
@@ -158,9 +168,14 @@ export function createEventHub(db: Database.Database): EventHub {
     // can leave a dead response sitting in `connections` until the next
     // broadcast or heartbeat happens to fail a write against it.
     // `Set.delete` is idempotent, so more than one of these firing for the
-    // same disconnect is harmless.
+    // same disconnect is harmless; `alreadyClosed` keeps the *log line* from
+    // firing more than once per connection the same way the Set itself does.
+    let alreadyClosed = false;
     const cleanup = (): void => {
       connections.delete(res);
+      if (alreadyClosed) return;
+      alreadyClosed = true;
+      logSseDisconnected(voterId, connections.size);
     };
     req.on("close", cleanup);
     res.on("close", cleanup);

@@ -4,6 +4,7 @@ import { getOrCreateVoterId } from "./http/voter.ts";
 import { getCharacter } from "./db/character.ts";
 import { hasVoted, DuplicateVoteError } from "./db/votes.ts";
 import { ensureCurrentRound, castVote, getRecentTrace, InvalidActionError } from "./game/lifecycle.ts";
+import { logInternalError, logVoteAccepted, logVoteRejected } from "./logging.ts";
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   if (res.headersSent) return;
@@ -115,8 +116,10 @@ export async function handlePostVote(
       // it can't leave stray bytes to corrupt the next request on a
       // keep-alive connection.
       res.setHeader("connection", "close");
+      logVoteRejected(voterId, "payload_too_large");
       sendJson(res, 413, { error: "payload too large" });
     } else {
+      logVoteRejected(voterId, "malformed_json");
       sendJson(res, 400, { error: "malformed JSON body" });
     }
     return;
@@ -126,16 +129,19 @@ export async function handlePostVote(
 
   try {
     const { round } = castVote(db, voterId, action, onResolved);
+    logVoteAccepted(voterId, round.id, action as string);
     sendJson(res, 200, {
       round: { id: round.id, opensAt: round.opens_at, resolvesAt: round.resolves_at },
     });
   } catch (err) {
     if (err instanceof InvalidActionError) {
+      logVoteRejected(voterId, "invalid_action", err.roundId);
       sendJson(res, 400, { error: "invalid action" });
     } else if (err instanceof DuplicateVoteError) {
+      logVoteRejected(voterId, "duplicate", err.roundId);
       sendJson(res, 409, { error: "already voted this round" });
     } else {
-      console.error(err);
+      logInternalError("POST /api/vote", err);
       sendJson(res, 500, { error: "internal error" });
     }
   }

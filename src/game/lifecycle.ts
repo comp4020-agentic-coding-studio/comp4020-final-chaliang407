@@ -1,14 +1,18 @@
 import type Database from "better-sqlite3";
 import { createRound, getOpenRound, getRecentResolvedRounds, type Round, type RoundResult } from "../db/rounds.ts";
 import { recordVote, tallyVotes, type VoteAction } from "../db/votes.ts";
-import { applyRoundResult } from "../db/character.ts";
+import { applyRoundResult, getCharacter } from "../db/character.ts";
+import { logRoundResolved } from "../logging.ts";
 
 const ACTIONS: readonly VoteAction[] = ["LEFT", "JUMP", "RIGHT"];
 
 export class InvalidActionError extends Error {
-  constructor(action: unknown) {
+  readonly roundId: number;
+
+  constructor(action: unknown, roundId: number) {
     super(`invalid action: ${JSON.stringify(action)}`);
     this.name = "InvalidActionError";
+    this.roundId = roundId;
   }
 }
 
@@ -36,6 +40,11 @@ function isDue(round: Round): boolean {
 // every caller share one real-time broadcast without double-firing it.
 function resolveRound(db: Database.Database, round: Round): { round: Round; didResolve: boolean } {
   let didResolve = false;
+  // Captured inside the transaction (so they reflect exactly what committed)
+  // but logged after it returns — logging is an external side effect with no
+  // place inside a DB transaction that SQLite might retry or roll back.
+  let logFields: Parameters<typeof logRoundResolved>[0] | undefined;
+
   const txn = db.transaction((r: Round): Round => {
     const claimed = db
       .prepare("UPDATE rounds SET status = 'resolved' WHERE id = ? AND status = 'open'")
@@ -44,6 +53,7 @@ function resolveRound(db: Database.Database, round: Round): { round: Round; didR
       return getOpenRound(db) ?? createRound(db);
     }
 
+    const characterBefore = getCharacter(db);
     const tally = tallyVotes(db, r.id);
     const result = decideResult(tally);
     db.prepare("UPDATE rounds SET result_action = ?, resolved_at = ? WHERE id = ?").run(
@@ -51,11 +61,23 @@ function resolveRound(db: Database.Database, round: Round): { round: Round; didR
       new Date().toISOString(),
       r.id,
     );
-    applyRoundResult(db, result);
+    const characterAfter = applyRoundResult(db, result);
     didResolve = true;
+    logFields = {
+      roundId: r.id,
+      result,
+      tally,
+      characterBefore: { position: characterBefore.position, level: characterBefore.level },
+      characterAfter: { position: characterAfter.position, level: characterAfter.level },
+    };
     return createRound(db);
   });
-  return { round: txn(round), didResolve };
+  const next = txn(round);
+  // Only after the resolving round's own transaction has committed — the
+  // same timing rule buildStatePayload's recentRounds already follows
+  // (never reveal a round's tally before it's actually resolved).
+  if (logFields) logRoundResolved(logFields);
+  return { round: next, didResolve };
 }
 
 // Ensures an open round exists and that it's actually still within its
@@ -86,7 +108,7 @@ export function castVote(
 ): { round: Round } {
   const round = ensureCurrentRound(db, onResolved);
   if (typeof action !== "string" || !ACTIONS.includes(action as VoteAction)) {
-    throw new InvalidActionError(action);
+    throw new InvalidActionError(action, round.id);
   }
   recordVote(db, round.id, voterId, action as VoteAction);
   return { round };

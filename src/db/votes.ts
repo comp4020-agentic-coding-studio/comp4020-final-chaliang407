@@ -12,9 +12,18 @@ export interface Vote {
 }
 
 export class DuplicateVoteError extends Error {
-  constructor(roundId: number, voterId: string) {
-    super(`voter ${voterId} already voted in round ${roundId}`);
+  readonly roundId: number;
+
+  // Deliberately omits voterId from the message: Error.message ends up in
+  // stack traces and generic `console.error(err)` catch-alls, neither of
+  // which should ever carry a voter's bearer cookie value. Callers that need
+  // the voter are already holding it themselves; `roundId` is exposed as a
+  // typed property for exactly that reason, rather than being parsed back
+  // out of a message string.
+  constructor(roundId: number) {
+    super(`duplicate vote in round ${roundId}`);
     this.name = "DuplicateVoteError";
+    this.roundId = roundId;
   }
 }
 
@@ -34,7 +43,7 @@ export function recordVote(
     return db.prepare("SELECT * FROM votes WHERE id = ?").get(Number(lastInsertRowid)) as Vote;
   } catch (err) {
     if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
-      throw new DuplicateVoteError(roundId, voterId);
+      throw new DuplicateVoteError(roundId);
     }
     throw err;
   }
