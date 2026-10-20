@@ -4,6 +4,7 @@ import { marked } from "marked";
 import { getDb } from "./db/client.ts";
 import { handleGetState, handlePostVote } from "./api.ts";
 import { createEventHub } from "./http/events.ts";
+import { logInternalError } from "./logging.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const db = getDb();
@@ -67,7 +68,7 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
         return;
       }
       handlePostVote(req, res, db, eventHub.notifyResolved).catch((err) => {
-        console.error(err);
+        logInternalError("POST /api/vote", err);
         sendInternalError(res);
       });
       return;
@@ -84,7 +85,7 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
 
     send(res, 404, "text/plain; charset=utf-8", "not found");
   } catch (err) {
-    console.error(err);
+    logInternalError(`${req.method} ${url.pathname}`, err);
     sendInternalError(res);
   }
 }
