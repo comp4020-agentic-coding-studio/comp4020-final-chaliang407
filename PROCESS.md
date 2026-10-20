@@ -1,106 +1,116 @@
-# Process overview: C8 → C9
+# Process overview: C8 → C10
 
-C8 (documented in the previous version of this file, preserved in git history
-at [`b70751b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/b70751b35176ea5ab3a4d456fcc0a8f06dcbba0b))
+## C8 → C9, summarized
+
+C8 (preserved in git history at
+[`b70751b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/b70751b35176ea5ab3a4d456fcc0a8f06dcbba0b))
 left the app with SQLite persistence, anonymous voting, hidden open-round
-tallies, and a browser that polled for state. C9's brief is specific about
-what was still missing: a change one person makes has to reach every other
-open session within about a second, with no reload, and one decision about
-multi-player behaviour has to be made and written down.
+tallies, and a browser that polled for state. C9 required a change one
+person makes to reach every other open session within about a second, with
+no reload, plus one documented multi-player decision.
 
-## Read-only audit before writing any code
-
-Rather than start implementing immediately, the first step was a read-only
-technical and design audit of the C8 codebase against the C9 brief:
-`src/server.ts`, `src/api.ts`, `src/game/lifecycle.ts`, `src/db/`, and
-`public/index.html`'s polling logic specifically. That audit established the
-actual failure mode in C8's polling: `POLL_MS = 1200` is usually fast, but a
-bystander tab's poll is phase-unsynchronized with when a round actually
-resolves, and `fly.toml`'s `auto_stop_machines`/`min_machines_running = 0`
-means a poll can land on a cold-starting machine with no bound on the delay.
-"Usually under a second" isn't the same claim as "reliably under a second,"
-and the brief asks for the latter. The audit also compared SSE, WebSockets,
-and faster polling against this specific architecture: this app has no
-client→client or even client→server push need beyond the existing
-`POST /api/vote`, so WebSockets' full duplex protocol buys nothing and only
-adds a new dependency, manual reconnect/backoff logic, and more surface to
-keep consistent with SQLite; fast polling is a smaller version of the same
-phase-misalignment problem, not a fix for it. SSE matched the actual
-direction of the data (server to client only), needed no new dependency on
-top of plain `node:http`, and gave reconnection for free via the browser's
-own `EventSource`. Before any code was written, that recommendation was
-checked against an explicit constraint carried over from the brief: receiving
-updates quickly is not the same claim as showing live vote totals, and the
-two had to stay separate through the whole design, not just at the end.
-
-## Implementation, in one deliberate commit
+A read-only audit came first: `POLL_MS = 1200` was usually fast, but a
+bystander tab's poll was phase-unsynchronized with when a round actually
+resolved, and `fly.toml`'s `auto_stop_machines` meant a poll could land on a
+cold-starting machine with no bound on the delay. SSE was chosen over
+WebSockets (no duplex need beyond the existing `POST /api/vote`) and over
+faster polling (a smaller version of the same problem, not a fix).
 
 The real-time layer landed in
 [`a7fad4e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/a7fad4e6437ad1d458b172c8413dc7cdec2de36c):
-`src/api.ts` gained `buildStatePayload`, extracted so `GET /api/state` and
-nothing else is the one place tallies can be read, and so a future caller
-can't accidentally duplicate the hidden-vote logic; `src/http/events.ts` is
-new, a `GET /api/events` SSE endpoint whose broadcast payload is literally
-`data: {}` — no action, no count, nothing to leak, by construction rather
-than by convention; `src/game/lifecycle.ts`'s `ensureCurrentRound` now
-accepts an `onResolved` callback, fired once per round actually resolved,
-threaded through from every caller that can observe a round go overdue — a
-vote, a state poll, or the real-time layer's own proactive deadline timer;
-and `public/index.html` switched its primary sync mechanism from
-`setInterval(poll, 1200)` to an `EventSource` connection, with a slow 15-
-second poll kept as a backstop. `spec/realtime.test.ts` was added in the same
-commit: five tests run against the real running app (not a mock), covering
-two-client propagation timing, tally/participation-leakage checks, duplicate
-and simultaneous votes, reconnect recovery, and the empty-round/genuine-tie
-distinction.
+`buildStatePayload` became the one place tallies can be read; `src/http/events.ts`
+broadcasts a content-free `data: {}` "resolved" signal; `public/index.html`
+switched to `EventSource` with a slow poll as backstop; `spec/realtime.test.ts`
+covers propagation timing, leakage, duplicate votes, reconnect, and the
+empty-round/genuine-tie distinction. A pre-commit review caught and fixed
+three real issues in the same commit: unguarded exception paths that could
+crash the process on one broken socket, a notification burst after a backlog
+of overdue rounds, and a reconnect that resynced nothing on its own.
+`docs/adr/0001-hidden-votes-visible-outcomes.md` and
+`docs/adr/0002-sse-for-realtime-delivery.md` record the decision and its
+open questions (notably, whether Fly's proxy treats an open SSE connection as
+active traffic was left unconfirmed, since C9 wasn't deployed before its
+cutoff).
 
-## What the review passes found and fixed
+## C10: identity, authorization, and logging
 
-Before committing, the implementation went through a focused correctness
-review against exactly the risk the design decision was meant to guard
-against, plus the ordinary hazards of adding a long-lived connection to a
-single-process Node server. Three real issues surfaced and were fixed in the
-same commit, not left for later: first, the deadline timer and broadcast path
-had no exception handling, so a single broken socket write could have thrown
-out of a `setTimeout` callback and crashed the whole process — every
-connection wrapped in try/catch so one bad client can only drop itself.
-Second, a burst of overdue rounds resolving at once (realistic after Fly
-stops the machine across more than one round's duration) would have fired one
-broadcast per backlogged round; the hub now coalesces any number of
-resolutions arriving before the next microtask into exactly one notification
-and one timer rearm. Third, the browser's `EventSource` reconnecting after a
-drop fired no resync on its own — `onopen` now triggers an immediate state
-refetch, on both the first connection and every reconnect, which is what
-actually makes reconnect recovery "immediate" rather than "eventually, next
-poll." A fourth, smaller issue — overlapping `poll()` calls from the backstop
-timer, the SSE event, and the round-deadline tick landing in the same window
-and both deciding to show a round reveal — was fixed with an in-flight/queued
-guard around `poll()` itself. The test suite was correspondingly strengthened
-to check for exactly one resolution notification per round and for identical
-SSE cadence between empty and populated rounds, so a participation signal
-can't leak through event *timing* even though it can't leak through content
-either.
+C10 adds a new axis: the server must tell two or more concurrent people
+apart, enforce server-side what each may see or change, and log who did
+what, so a crit presenter can narrate from Fly's logs while two classmates
+act on the app from separate Chrome profiles. Unlike C9's new capability,
+C10's job was mostly to make an *existing* decision — C8's anonymous
+`voter_id` cookie — explicit, documented, and visible in logs, without
+reopening the hidden-vote contract C9 had just finished defending.
 
-## What's deliberately unverified
+**Read-only audit, again before any code.** `src/http/voter.ts`'s cookie
+minting, `src/api.ts`'s `hasVoted` scoping, `src/db/votes.ts`'s uniqueness
+constraint, `src/http/events.ts`'s connection handling, and every existing
+`console.*` call site were read before anything was written. Conclusions:
+two Chrome profiles already get distinct identities for free (each is its
+own cookie jar, and `getOrCreateVoterId` only mints when no cookie arrives);
+no endpoint accepts a client-supplied voter id anywhere, so there was no
+existing spoofing surface to close; and the app had essentially no
+structured operational logging — six `console.*` calls total, all startup
+noise or raw exception dumps, none saying who voted, who connected, or what
+a round resolved to. That gap, not an authorization hole, was the actual
+target.
 
-Two things are explicitly not claimed as done. No browser-automation tool
-(Playwright, Puppeteer, or similar) is installed in this project, so
-`spec/realtime.test.ts` verifies the server's HTTP/SSE contract directly —
-exactly what a browser would receive on the wire — but does not drive
-`public/index.html` through an actual browser; the frontend fixes were
-checked by reading the script and by manually exercising the running app.
-Second, whether Fly's proxy treats an open SSE connection as active traffic
-for `auto_stop_machines` purposes has not been confirmed, because that can
-only be observed against a real deployment and this round of work stopped
-before deploying. Both gaps are recorded, not glossed over, in
-`docs/adr/0002-sse-for-realtime-delivery.md`.
+**Implementation and privacy-safe labelling.** `src/logging.ts` is new: one
+structured JSON line per event, for identity creation, SSE connect/disconnect,
+accepted/rejected votes (with reason), and round resolution (result, tally,
+whether the character moved). The design question was how to name a player
+in a log line without the log becoming a second copy of their voting
+credential; `docs/adr/0003-anonymous-identity-and-authorization.md` records
+the answer: `deriveLabel` HMACs the cookie under a server-only key
+(`VOTER_LABEL_SECRET`, or a random per-process key if unset) and truncates
+the digest — stable within a session, one-way, never the raw cookie.
+`round.resolved` logs only after its transaction commits
+(`src/game/lifecycle.ts`), the same timing rule `buildStatePayload` already
+used, so the log stream can't become a new tally-leak channel. This landed in
+[`0e5628c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/0e5628ccfab469b005939229fd969ff173fd2f11)
+with `spec/identity.test.ts` and `spec/logging.test.ts`: the former drives the
+real running app over HTTP to confirm two cookie jars get distinct identities,
+duplicate votes are rejected per-cookie, `hasVoted` never leaks across
+identities, and two concrete spoof attempts (a `voterId` field in the vote
+body, a `voterId` query string on `/api/state`) do nothing; the latter checks
+the logger's own output in-process, since the spec harness only reaches the
+app over HTTP.
 
-## The one documented multiplayer decision
+**The privacy-hardening review.** Before committing, a focused review checked
+the diff for any error path that could leak a raw voter id, and found two:
+`DuplicateVoteError`'s message interpolated the raw `voter_id`, unused by any
+logger today but one careless future `console.error(err)` away from a leak;
+and the three remaining generic `console.error(err)` catch-alls in
+`src/api.ts`/`src/server.ts` would print such a message in full if that ever
+changed. Both were fixed in
+[`ae083a3`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/ae083a32ba27f92efa781295c54e00a22831a34f):
+`DuplicateVoteError` now carries `roundId` as a typed property instead of
+interpolating the voter id at all, and the catch-alls call a new
+`logInternalError(operation, err)` that logs only a fixed operation label and
+the error's `.name` — never `.message` or `.stack`. Two regression tests pin
+this down: the error's message/stack never contain a voter id, and the 409
+duplicate-vote response body is unchanged. The two C10 commits were kept
+deliberately separate — identity/logging, then hardening — so the history
+shows the audit finding and its fix as two legible steps, matching the
+two-pass discipline (tests passing vs. an adversarial review) C9's reflection
+already named as worth keeping.
 
-`docs/adr/0001-hidden-votes-visible-outcomes.md` records the decision this
-crit asked for: going real-time changed *when* a player learns a round
-resolved, not *what* they're allowed to see while it's open. The alternative
-of surfacing a live running tally, or even a content-free "someone just
-voted" pulse, was considered and rejected, because either would let players
-react to each other's choices instead of deciding independently — which is
-the one thing C8's hidden-tally design was already built to prevent.
+**What's deliberately unverified.** As with C9's own gaps: this logging has
+been built and tested against the real running app's HTTP/SSE surface and,
+separately, the logger's own output in-process — but not yet exercised as a
+live two-Chrome-profile session narrated from `fly logs`, and the app hasn't
+been redeployed since C9. Configuring `VOTER_LABEL_SECRET` as a Fly secret,
+so that a player's log label survives a machine auto-stop/restart rather than
+changing with each new process, is also still pending — it requires a
+deliberate `flyctl secrets set` step this round of work stopped short of,
+rather than code. `reflections/crit-10.md` says the same.
+
+## The documented decisions, together
+
+`docs/adr/0001-hidden-votes-visible-outcomes.md` (C9) and
+`docs/adr/0003-anonymous-identity-and-authorization.md` (C10) now cover
+complementary halves of the same underlying model: who the server believes a
+request is from, and what it will and won't show that identity. Neither
+reopens the other — C10's identity work treats C9's hidden-tally rule as a
+fixed constraint on its own logging design, not a decision available to
+revisit.

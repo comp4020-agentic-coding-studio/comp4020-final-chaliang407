@@ -5,9 +5,12 @@
 A real-time multiplayer game where every visitor votes each round on a
 shared character's action (`LEFT`/`JUMP`/`RIGHT`); a unique majority moves
 it, a genuine tie holds it still, and an empty round is suppressed rather
-than shown as disagreement. See `README.md` for the full rules and
-`docs/adr/` for the two C9 design decisions (hidden votes vs. visible
-outcomes, and why SSE over WebSockets/polling).
+than shown as disagreement. Each visitor is an anonymous cookie identity
+(C10), told apart from every other without accounts, with server-side logs
+recording who did what in a privacy-safe form. See `README.md` for the full
+rules and `docs/adr/` for the C9 design decisions (hidden votes vs. visible
+outcomes, and why SSE over WebSockets/polling) and the C10 decision
+(anonymous cookie identity/authorization and pseudonymous logging).
 
 ## Non-negotiable invariants
 
@@ -38,6 +41,26 @@ These are load-bearing project decisions, not implementation details — don't
   `ensureCurrentRound`'s lazy, timestamp-based resolution on the next request
   is the real correctness mechanism — the proactive SSE deadline timer is an
   optimization on top of it, never a replacement.
+- **Identity is an anonymous `HttpOnly` cookie, never an account.**
+  `src/http/voter.ts`'s `getOrCreateVoterId` is the only place a `voter_id`
+  is minted or read; no endpoint may accept a client-supplied voter id (body
+  field, query string, or header) as an alternative to the request's own
+  cookie. See `docs/adr/0003-anonymous-identity-and-authorization.md` before
+  adding login, passwords, or any form of account — the brief needs
+  distinguishable browsers, not authenticated people, and accounts are a
+  reversal of that decision, not a feature addition.
+- **Server logs never carry a raw `voter_id`, full cookie, secret, or request
+  body.** `src/logging.ts`'s `deriveLabel` is the only sanctioned way to name
+  a player in a log line (a short HMAC-derived label, keyed by
+  `VOTER_LABEL_SECRET` or a per-process fallback key); `logInternalError` is
+  the only sanctioned way to log a caught exception (operation label + error
+  type only, never `.message` or `.stack`). Don't add a `console.error(err)`
+  or `console.log(voterId)` outside these two functions without checking
+  whether the value being logged could carry a voter id.
+- **`round.resolved` and any other log line exposing a tally may only log
+  after a round's resolving transaction commits.** Same timing rule as
+  `buildStatePayload`'s `recentRounds` — the log stream is not exempt from
+  the hidden-open-round-tally rule above.
 
 ## Commands
 
@@ -52,6 +75,12 @@ These are load-bearing project decisions, not implementation details — don't
 When testing locally, use an isolated `DATA_DIR` (e.g. a `mktemp -d`) rather
 than the default `.data/` dev database, so ad hoc test runs don't disturb
 whatever local state is there.
+
+`VOTER_LABEL_SECRET` is optional and never required for correctness — unset,
+player log labels are still stable within one process but change on every
+restart. Setting it is a deploy-time decision (`flyctl secrets set
+VOTER_LABEL_SECRET=<random value>`, never committed to `fly.toml` or any
+tracked file), not something to default or generate in application code.
 
 ## Safe git / deployment workflow
 
