@@ -98,23 +98,50 @@ export interface RoundResolvedLog {
   roundId: number;
   result: string;
   tally: Record<string, number>;
-  characterBefore: { position: number; level: number };
-  characterAfter: { position: number; level: number };
+  characterBefore: { x: number; y: number; won: boolean; score: number; level: number };
+  characterAfter: { x: number; y: number; won: boolean; score: number; level: number };
+  // Reported explicitly by the caller (src/db/character.ts's
+  // applyRoundResultDetailed) rather than re-derived from the before/after
+  // character snapshot: a collision's -20 penalty can land on the same
+  // round as an unrelated score change from floor-at-zero clamping, and
+  // "score decreased" alone can't distinguish a collision from, in
+  // principle, any other future score-decreasing event — the caller already
+  // knows definitively which happened, so this just carries that fact
+  // through rather than guessing at it a second time from the numbers.
+  collided: boolean;
+  advancedLevel: boolean;
 }
 
 // Only ever called after a round's resolving transaction has committed
 // (src/game/lifecycle.ts's resolveRound), so — same timing rule as
 // buildStatePayload's recentRounds — this never logs a tally for a round
-// that's still open.
+// that's still open. Score, level, and collision outcome are world state,
+// not a vote tally, so logging them here carries no hidden-vote risk — same
+// reasoning as exposing score/level through buildStatePayload.
 export function logRoundResolved(params: RoundResolvedLog): void {
   const moved =
-    params.characterBefore.position !== params.characterAfter.position ||
-    params.characterBefore.level !== params.characterAfter.level;
+    params.characterBefore.x !== params.characterAfter.x ||
+    params.characterBefore.y !== params.characterAfter.y;
+  const pelletCollected = !params.collided && params.characterAfter.score > params.characterBefore.score;
   emit("round.resolved", {
     round: params.roundId,
     result: params.result,
     tally: params.tally,
     character: { before: params.characterBefore, after: params.characterAfter },
     moved,
+    wonThisRound: !params.characterBefore.won && params.characterAfter.won,
+    pelletCollected,
+    advancedLevel: params.advancedLevel,
+    collided: params.collided,
   });
+}
+
+// Fires once per successful restart — named by the player label whose
+// request actually performed it (any connected player may initiate a
+// restart; this just records which one's request happened to win the race),
+// the round it closed out, and the fresh round it opened. Only ever called
+// after restartGame's own transaction has committed (src/game/lifecycle.ts),
+// same timing rule as round.resolved and buildStatePayload's recentRounds.
+export function logGameRestarted(voterId: string, closedRoundId: number, newRoundId: number): void {
+  emit("game.restarted", { player: deriveLabel(voterId), closedRound: closedRoundId, newRound: newRoundId });
 }

@@ -11,7 +11,7 @@ const baseUrl = inject("baseUrl");
 const TEST_TIMEOUT_MS = 15000;
 
 interface StatePayload {
-  character: { position: number; level: number };
+  character: { x: number; y: number; won: boolean };
   round: { id: number; opensAt: string; resolvesAt: string; status: string; hasVoted: boolean };
   recentRounds: { id: number; result: string; tally: Record<string, number> }[];
 }
@@ -125,7 +125,7 @@ it(
     const bBefore = await b.state();
     expect(bBefore.round.hasVoted).toBe(false);
 
-    await a.vote("JUMP");
+    await a.vote("UP");
 
     const aAfter = await a.state();
     const bAfter = await b.state();

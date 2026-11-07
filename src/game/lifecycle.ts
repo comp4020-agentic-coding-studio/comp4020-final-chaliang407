@@ -1,10 +1,12 @@
 import type Database from "better-sqlite3";
 import { createRound, getOpenRound, getRecentResolvedRounds, type Round, type RoundResult } from "../db/rounds.ts";
 import { recordVote, tallyVotes, type VoteAction } from "../db/votes.ts";
-import { applyRoundResult, getCharacter } from "../db/character.ts";
-import { logRoundResolved } from "../logging.ts";
+import { applyRoundResult, applyRoundResultDetailed, getCharacter, resetCharacter } from "../db/character.ts";
+import { resetAllPellets } from "../db/pellets.ts";
+import { resetAllEnemiesToSpawn } from "../db/enemies.ts";
+import { logGameRestarted, logRoundResolved } from "../logging.ts";
 
-const ACTIONS: readonly VoteAction[] = ["LEFT", "JUMP", "RIGHT"];
+const ACTIONS: readonly VoteAction[] = ["UP", "DOWN", "LEFT", "RIGHT"];
 
 export class InvalidActionError extends Error {
   readonly roundId: number;
@@ -61,14 +63,37 @@ function resolveRound(db: Database.Database, round: Round): { round: Round; didR
       new Date().toISOString(),
       r.id,
     );
-    const characterAfter = applyRoundResult(db, result);
+    const { character: characterAfter, collided, advancedLevel } = applyRoundResultDetailed(db, result);
+    // Written after result_action/resolved_at, in the same transaction, so a
+    // round's outcome flags are never readable before the round itself is
+    // marked resolved — same timing rule that already applies to
+    // result_action and to buildStatePayload's recentRounds tallies.
+    db.prepare("UPDATE rounds SET collided = ?, advanced_level = ? WHERE id = ?").run(
+      collided ? 1 : 0,
+      advancedLevel ? 1 : 0,
+      r.id,
+    );
     didResolve = true;
     logFields = {
       roundId: r.id,
       result,
       tally,
-      characterBefore: { position: characterBefore.position, level: characterBefore.level },
-      characterAfter: { position: characterAfter.position, level: characterAfter.level },
+      characterBefore: {
+        x: characterBefore.x,
+        y: characterBefore.y,
+        won: characterBefore.won,
+        score: characterBefore.score,
+        level: characterBefore.level,
+      },
+      characterAfter: {
+        x: characterAfter.x,
+        y: characterAfter.y,
+        won: characterAfter.won,
+        score: characterAfter.score,
+        level: characterAfter.level,
+      },
+      collided,
+      advancedLevel,
     };
     return createRound(db);
   });
@@ -114,6 +139,101 @@ export function castVote(
   return { round };
 }
 
+export class RestartNotAllowedError extends Error {
+  constructor() {
+    super("restart is only allowed after the character has reached EXIT");
+    this.name = "RestartNotAllowedError";
+  }
+}
+
+// Server-authoritative, atomic restart: any connected player's request can
+// trigger it (no special authorization beyond the ordinary anonymous
+// identity every endpoint already requires), but it only ever takes effect
+// if the character has actually reached EXIT — `character.won` is both the
+// permission check and, because it's re-read fresh inside the transaction
+// below, the concurrency guard. Node is single-threaded and better-sqlite3's
+// transaction() runs synchronously with no interleaving `await` inside it
+// (same guarantee resolveRound already relies on), so two concurrent restart
+// requests can never both observe `won === true`: whichever's transaction
+// commits first flips it back to false, and the second — processed strictly
+// after the first completes, never during it — finds `won === false` and is
+// rejected by RestartNotAllowedError instead of restarting twice or
+// double-creating rounds.
+export function restartGame(
+  db: Database.Database,
+  voterId: string,
+  onResolved?: () => void,
+): { round: Round } {
+  // Guarantees an open round exists before the transaction below reads one —
+  // the same invariant castVote and buildStatePayload already depend on.
+  ensureCurrentRound(db, onResolved);
+
+  let logFields: { closedRoundId: number; newRoundId: number } | undefined;
+
+  const txn = db.transaction((): Round => {
+    const character = getCharacter(db);
+    if (!character.won) {
+      throw new RestartNotAllowedError();
+    }
+
+    const openRound = getOpenRound(db);
+    if (openRound) {
+      // Closed out exactly like an ordinary resolution — decided from
+      // whatever was actually cast against it — rather than invented or
+      // discarded, so the historical trace stays uniform. This is
+      // guaranteed to be a no-op on the character: `character.won` is still
+      // true at this exact point (the reset happens after), and
+      // applyRoundResult never moves an already-won character. That's what
+      // makes any stale vote or stale timer on this round harmless — it
+      // gets to "decide" a result, but that result can never reach the
+      // freshly-reset character, because the reset hasn't happened when
+      // it's applied, and nothing resolves this round again afterward.
+      const claimed = db
+        .prepare("UPDATE rounds SET status = 'resolved' WHERE id = ? AND status = 'open'")
+        .run(openRound.id);
+      if (claimed.changes > 0) {
+        const tally = tallyVotes(db, openRound.id);
+        const result = decideResult(tally);
+        db.prepare("UPDATE rounds SET result_action = ?, resolved_at = ? WHERE id = ?").run(
+          result,
+          new Date().toISOString(),
+          openRound.id,
+        );
+        applyRoundResult(db, result);
+        // No corresponding collided/advanced_level write here: this round's
+        // own result can never actually collide or advance a level, because
+        // applyRoundResult is a guaranteed no-op against an already-won
+        // character — the schema's default of 0/false for both columns is
+        // already the accurate answer for this round.
+      }
+    }
+
+    // A full new run: character back to level 1 START with score zeroed,
+    // every level's pellets uncollected again, every enemy back at its fixed
+    // spawn (src/game/levels.ts) — all three in this same transaction, so a
+    // crash partway through can never leave, say, pellets reset but the
+    // character still mid-level-7.
+    resetCharacter(db);
+    resetAllPellets(db);
+    resetAllEnemiesToSpawn(db);
+    // A brand-new round, timed from *now* — no stale resolves_at carried
+    // over from before the restart, so the fresh round gets its own full
+    // ROUND_DURATION_MS window rather than inheriting whatever was left on
+    // the pre-restart round's clock.
+    const fresh = createRound(db);
+    logFields = { closedRoundId: openRound?.id ?? fresh.id, newRoundId: fresh.id };
+    return fresh;
+  });
+
+  const round = txn();
+  if (logFields) logGameRestarted(voterId, logFields.closedRoundId, logFields.newRoundId);
+  // Every connected client learns about the restart the same way it learns
+  // about any other round change — the existing content-free SSE signal,
+  // followed by each client's own GET /api/state refetch.
+  onResolved?.();
+  return { round };
+}
+
 export interface ResolvedRoundTrace {
   id: number;
   opensAt: string;
@@ -121,6 +241,12 @@ export interface ResolvedRoundTrace {
   resolvedAt: string;
   result: RoundResult;
   tally: Record<VoteAction, number>;
+  // Server-confirmed outcome of this specific resolved round — never
+  // inferred client-side from a score delta or a position jump. See
+  // src/db/schema.ts's comment on rounds.collided/advanced_level for why
+  // exposing these carries no hidden-vote risk.
+  collided: boolean;
+  advancedLevel: boolean;
 }
 
 // Resolved rounds may reveal their tally; only the open round is hidden.
@@ -132,5 +258,7 @@ export function getRecentTrace(db: Database.Database, limit: number): ResolvedRo
     resolvedAt: round.resolved_at!,
     result: round.result_action!,
     tally: tallyVotes(db, round.id),
+    collided: round.collided === 1,
+    advancedLevel: round.advanced_level === 1,
   }));
 }

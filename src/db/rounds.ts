@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { ROUND_DURATION_MS } from "../config.ts";
 
 export type RoundStatus = "open" | "resolved";
-export type RoundResult = "LEFT" | "JUMP" | "RIGHT" | "TIE";
+export type RoundResult = "UP" | "DOWN" | "LEFT" | "RIGHT" | "TIE";
 
 export interface Round {
   id: number;
@@ -11,6 +11,12 @@ export interface Round {
   status: RoundStatus;
   result_action: RoundResult | null;
   resolved_at: string | null;
+  // Server-authoritative outcome flags, meaningful only once status ===
+  // 'resolved' (both default to 0/false on an open round, same as
+  // result_action defaults to null) — see src/db/schema.ts's own comment for
+  // why these exist and why exposing them carries no hidden-vote risk.
+  collided: number;
+  advanced_level: number;
 }
 
 // Opens a new round starting now. Resolving an elapsed round is a later

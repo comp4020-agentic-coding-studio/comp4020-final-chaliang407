@@ -3,7 +3,18 @@ import type Database from "better-sqlite3";
 import { getOrCreateVoterId } from "./http/voter.ts";
 import { getCharacter } from "./db/character.ts";
 import { hasVoted, DuplicateVoteError } from "./db/votes.ts";
-import { ensureCurrentRound, castVote, getRecentTrace, InvalidActionError } from "./game/lifecycle.ts";
+import { getPellets } from "./db/pellets.ts";
+import { getEnemies } from "./db/enemies.ts";
+import {
+  ensureCurrentRound,
+  castVote,
+  getRecentTrace,
+  restartGame,
+  InvalidActionError,
+  RestartNotAllowedError,
+} from "./game/lifecycle.ts";
+import { getMazeLayout } from "./game/maze.ts";
+import { getLevel } from "./game/levels.ts";
 import { logInternalError, logVoteAccepted, logVoteRejected } from "./logging.ts";
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -12,8 +23,15 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+// The maze layout is fixed and identical for every request — no DB read, no
+// per-voter data — so it's served from its own endpoint once per page load
+// rather than folding static geometry into every /api/state poll.
+export function handleGetMaze(_req: IncomingMessage, res: ServerResponse): void {
+  sendJson(res, 200, getMazeLayout());
+}
+
 export interface StatePayload {
-  character: { position: number; level: number };
+  character: { x: number; y: number; won: boolean; level: number; score: number };
   round: {
     id: number;
     opensAt: string;
@@ -22,6 +40,33 @@ export interface StatePayload {
     hasVoted: boolean;
   };
   recentRounds: ReturnType<typeof getRecentTrace>;
+  // Every pellet for the character's *current* level, collected or not —
+  // world state, always safe to expose in full regardless of round status,
+  // exactly like character position already is (see this function's own
+  // comment on the hidden-vote rule, which is specifically about vote
+  // tallies/participation, not about pellets, enemies, level, or score).
+  pellets: { x: number; y: number; collected: boolean }[];
+  // Every enemy for the character's *current* level, at its current
+  // server-authoritative position — world state, same hidden-vote-rule
+  // reasoning as pellets above. The random choice behind each enemy's move
+  // is made and persisted entirely server-side (src/db/enemies.ts,
+  // src/game/enemies.ts); a client only ever sees the resulting position
+  // here, never a seed, a choice, or anything it could simulate itself.
+  enemies: { x: number; y: number }[];
+  // The maze geometry for the character's *current* level — levels have
+  // different grids, so unlike the original single-maze /api/maze endpoint
+  // (still served, for the original level-1-only maze, used by
+  // spec/maze.test.ts's own checks), the frontend needs the level-aware
+  // version here to know which walls/paths to render after a level
+  // transition, without a second round-trip or a client-side level->geometry
+  // table of its own.
+  maze: {
+    width: number;
+    height: number;
+    rows: readonly string[];
+    start: { x: number; y: number };
+    exit: { x: number; y: number };
+  };
 }
 
 // The one place the open round's tallies are allowed to be read at all — and
@@ -49,7 +94,13 @@ export function buildStatePayload(
   const character = getCharacter(db);
 
   return {
-    character: { position: character.position, level: character.level },
+    character: {
+      x: character.x,
+      y: character.y,
+      won: character.won,
+      level: character.level,
+      score: character.score,
+    },
     round: {
       id: round.id,
       opensAt: round.opens_at,
@@ -58,6 +109,9 @@ export function buildStatePayload(
       hasVoted: hasVoted(db, round.id, voterId),
     },
     recentRounds: getRecentTrace(db, 5),
+    pellets: getPellets(db, character.level).map((p) => ({ x: p.x, y: p.y, collected: p.collected })),
+    enemies: getEnemies(db, character.level).map((e) => ({ x: e.x, y: e.y })),
+    maze: getLevel(character.level).maze,
   };
 }
 
@@ -71,7 +125,7 @@ export function handleGetState(
   sendJson(res, 200, buildStatePayload(db, voterId, onResolved));
 }
 
-// The only body this endpoint ever expects is {"action":"LEFT"|"JUMP"|"RIGHT"}
+// The only body this endpoint ever expects is {"action":"UP"|"DOWN"|"LEFT"|"RIGHT"}
 // — a few bytes — so this cap is generous, not tight; it exists to reject
 // abusive bodies before they're fully buffered, not to accommodate legitimate
 // large input.
@@ -142,6 +196,35 @@ export async function handlePostVote(
       sendJson(res, 409, { error: "already voted this round" });
     } else {
       logInternalError("POST /api/vote", err);
+      sendJson(res, 500, { error: "internal error" });
+    }
+  }
+}
+
+// Any connected player may call this — no extra authorization beyond the
+// ordinary anonymous identity every endpoint already requires — but
+// restartGame itself is what actually enforces "only after victory" and
+// "exactly once," by re-reading character.won fresh inside its own
+// transaction. This handler never decides that itself; it just reports
+// whatever restartGame decided.
+export async function handlePostRestart(
+  req: IncomingMessage,
+  res: ServerResponse,
+  db: Database.Database,
+  onResolved?: () => void,
+): Promise<void> {
+  const voterId = getOrCreateVoterId(req, res);
+
+  try {
+    const { round } = restartGame(db, voterId, onResolved);
+    sendJson(res, 200, {
+      round: { id: round.id, opensAt: round.opens_at, resolvesAt: round.resolves_at },
+    });
+  } catch (err) {
+    if (err instanceof RestartNotAllowedError) {
+      sendJson(res, 409, { error: "restart is only allowed after reaching EXIT" });
+    } else {
+      logInternalError("POST /api/restart", err);
       sendJson(res, 500, { error: "internal error" });
     }
   }

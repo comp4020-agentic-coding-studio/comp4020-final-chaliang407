@@ -96,14 +96,16 @@ describe("structured logging", () => {
     logRoundResolved({
       roundId: 7,
       result: "RIGHT",
-      tally: { LEFT: 1, JUMP: 0, RIGHT: 2 },
-      characterBefore: { position: 0, level: 0 },
-      characterAfter: { position: 1, level: 0 },
+      tally: { UP: 0, DOWN: 0, LEFT: 1, RIGHT: 2 },
+      characterBefore: { x: 1, y: 1, won: false, score: 0, level: 1 },
+      characterAfter: { x: 2, y: 1, won: false, score: 0, level: 1 },
+      collided: false,
+      advancedLevel: false,
     });
     const event = readEvents(spy).find((e) => e.event === "round.resolved" && e.round === 7);
     expect(event).toMatchObject({
       result: "RIGHT",
-      tally: { LEFT: 1, JUMP: 0, RIGHT: 2 },
+      tally: { UP: 0, DOWN: 0, LEFT: 1, RIGHT: 2 },
       moved: true,
     });
   });
@@ -112,26 +114,86 @@ describe("structured logging", () => {
     logRoundResolved({
       roundId: 8,
       result: "TIE",
-      tally: { LEFT: 1, JUMP: 0, RIGHT: 1 },
-      characterBefore: { position: 3, level: 0 },
-      characterAfter: { position: 3, level: 0 },
+      tally: { UP: 0, DOWN: 0, LEFT: 1, RIGHT: 1 },
+      characterBefore: { x: 3, y: 1, won: false, score: 0, level: 1 },
+      characterAfter: { x: 3, y: 1, won: false, score: 0, level: 1 },
+      collided: false,
+      advancedLevel: false,
     });
     const event = readEvents(spy).find((e) => e.event === "round.resolved" && e.round === 8);
     expect(event).toMatchObject({ moved: false });
+  });
+
+  it("flags wonThisRound only on the round where the character reaches level 10's EXIT", () => {
+    logRoundResolved({
+      roundId: 9,
+      result: "DOWN",
+      tally: { UP: 0, DOWN: 2, LEFT: 0, RIGHT: 0 },
+      characterBefore: { x: 7, y: 6, won: false, score: 0, level: 10 },
+      characterAfter: { x: 7, y: 7, won: true, score: 0, level: 10 },
+      collided: false,
+      advancedLevel: false,
+    });
+    const event = readEvents(spy).find((e) => e.event === "round.resolved" && e.round === 9);
+    expect(event).toMatchObject({ moved: true, wonThisRound: true });
+  });
+
+  it("flags pelletCollected only on the round where score actually increased and no collision occurred", () => {
+    logRoundResolved({
+      roundId: 10,
+      result: "RIGHT",
+      tally: { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 1 },
+      characterBefore: { x: 1, y: 1, won: false, score: 0, level: 1 },
+      characterAfter: { x: 2, y: 1, won: false, score: 10, level: 1 },
+      collided: false,
+      advancedLevel: false,
+    });
+    const event = readEvents(spy).find((e) => e.event === "round.resolved" && e.round === 10);
+    expect(event).toMatchObject({ pelletCollected: true });
+  });
+
+  it("flags advancedLevel only on the round where the character's level actually increased", () => {
+    logRoundResolved({
+      roundId: 11,
+      result: "RIGHT",
+      tally: { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 1 },
+      characterBefore: { x: 7, y: 7, won: false, score: 20, level: 1 },
+      characterAfter: { x: 1, y: 1, won: false, score: 20, level: 2 },
+      collided: false,
+      advancedLevel: true,
+    });
+    const event = readEvents(spy).find((e) => e.event === "round.resolved" && e.round === 11);
+    expect(event).toMatchObject({ advancedLevel: true });
+  });
+
+  it("flags collided and never pelletCollected on a round where an enemy collision overrode a score-decreasing penalty", () => {
+    logRoundResolved({
+      roundId: 12,
+      result: "RIGHT",
+      tally: { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 1 },
+      characterBefore: { x: 5, y: 5, won: false, score: 30, level: 3 },
+      characterAfter: { x: 1, y: 1, won: false, score: 10, level: 3 },
+      collided: true,
+      advancedLevel: false,
+    });
+    const event = readEvents(spy).find((e) => e.event === "round.resolved" && e.round === 12);
+    expect(event).toMatchObject({ collided: true, pelletCollected: false });
   });
 
   it("never emits a raw voter id, a cookie, or a request-body field in any log line", () => {
     const voterId = "11112222-3333-4444-5555-666677778888";
     logIdentityCreated(voterId);
     logSseConnected(voterId, 1);
-    logVoteAccepted(voterId, 1, "JUMP");
+    logVoteAccepted(voterId, 1, "UP");
     logVoteRejected(voterId, "invalid_action", 1);
     logRoundResolved({
       roundId: 1,
-      result: "JUMP",
-      tally: { LEFT: 0, JUMP: 1, RIGHT: 0 },
-      characterBefore: { position: 0, level: 0 },
-      characterAfter: { position: 0, level: 1 },
+      result: "UP",
+      tally: { UP: 1, DOWN: 0, LEFT: 0, RIGHT: 0 },
+      characterBefore: { x: 1, y: 1, won: false, score: 0, level: 1 },
+      characterAfter: { x: 1, y: 0, won: false, score: 0, level: 1 },
+      collided: false,
+      advancedLevel: false,
     });
     for (const [line] of spy.mock.calls) {
       const raw = String(line);

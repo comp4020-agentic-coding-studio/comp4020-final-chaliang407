@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFileSync } from "node:fs";
 import { marked } from "marked";
 import { getDb } from "./db/client.ts";
-import { handleGetState, handlePostVote } from "./api.ts";
+import { handleGetMaze, handleGetState, handlePostRestart, handlePostVote } from "./api.ts";
 import { createEventHub } from "./http/events.ts";
 import { logInternalError } from "./logging.ts";
 
@@ -53,6 +53,15 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
       return;
     }
 
+    if (url.pathname === "/api/maze") {
+      if (req.method !== "GET") {
+        send(res, 405, "text/plain; charset=utf-8", "method not allowed");
+        return;
+      }
+      handleGetMaze(req, res);
+      return;
+    }
+
     if (url.pathname === "/api/state") {
       if (req.method !== "GET") {
         send(res, 405, "text/plain; charset=utf-8", "method not allowed");
@@ -69,6 +78,18 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
       }
       handlePostVote(req, res, db, eventHub.notifyResolved).catch((err) => {
         logInternalError("POST /api/vote", err);
+        sendInternalError(res);
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/restart") {
+      if (req.method !== "POST") {
+        send(res, 405, "text/plain; charset=utf-8", "method not allowed");
+        return;
+      }
+      handlePostRestart(req, res, db, eventHub.notifyResolved).catch((err) => {
+        logInternalError("POST /api/restart", err);
         sendInternalError(res);
       });
       return;

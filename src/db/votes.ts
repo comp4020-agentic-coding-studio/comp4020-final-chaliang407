@@ -64,7 +64,7 @@ export function tallyVotes(db: Database.Database, roundId: number): Record<VoteA
   const rows = db
     .prepare("SELECT action, COUNT(*) as count FROM votes WHERE round_id = ? GROUP BY action")
     .all(roundId) as { action: VoteAction; count: number }[];
-  const tally: Record<VoteAction, number> = { LEFT: 0, JUMP: 0, RIGHT: 0 };
+  const tally: Record<VoteAction, number> = { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 0 };
   for (const row of rows) tally[row.action] = row.count;
   return tally;
 }
