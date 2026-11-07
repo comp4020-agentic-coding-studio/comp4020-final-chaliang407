@@ -1,4 +1,4 @@
-# Process overview: C8 → C10
+# Process overview: C8 → the final project
 
 ## C8 → C9, summarized
 
@@ -14,103 +14,103 @@ bystander tab's poll was phase-unsynchronized with when a round actually
 resolved, and `fly.toml`'s `auto_stop_machines` meant a poll could land on a
 cold-starting machine with no bound on the delay. SSE was chosen over
 WebSockets (no duplex need beyond the existing `POST /api/vote`) and over
-faster polling (a smaller version of the same problem, not a fix).
-
-The real-time layer landed in
+faster polling (a smaller version of the same problem, not a fix). The
+real-time layer landed in
 [`a7fad4e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/a7fad4e6437ad1d458b172c8413dc7cdec2de36c):
 `buildStatePayload` became the one place tallies can be read; `src/http/events.ts`
-broadcasts a content-free `data: {}` "resolved" signal; `public/index.html`
-switched to `EventSource` with a slow poll as backstop; `spec/realtime.test.ts`
+broadcasts a content-free `data: {}` "resolved" signal; `spec/realtime.test.ts`
 covers propagation timing, leakage, duplicate votes, reconnect, and the
-empty-round/genuine-tie distinction. A pre-commit review caught and fixed
-three real issues in the same commit: unguarded exception paths that could
-crash the process on one broken socket, a notification burst after a backlog
-of overdue rounds, and a reconnect that resynced nothing on its own.
-`docs/adr/0001-hidden-votes-visible-outcomes.md` and
-`docs/adr/0002-sse-for-realtime-delivery.md` record the decision and its
-open questions (notably, whether Fly's proxy treats an open SSE connection as
-active traffic was left unconfirmed, since C9 wasn't deployed before its
-cutoff).
+empty-round/genuine-tie distinction.
 
 ## C10: identity, authorization, and logging
 
-C10 adds a new axis: the server must tell two or more concurrent people
-apart, enforce server-side what each may see or change, and log who did
-what, so a crit presenter can narrate from Fly's logs while two classmates
-act on the app from separate Chrome profiles. Unlike C9's new capability,
-C10's job was mostly to make an *existing* decision — C8's anonymous
-`voter_id` cookie — explicit, documented, and visible in logs, without
-reopening the hidden-vote contract C9 had just finished defending.
+C10 added an anonymous `voter_id` cookie's visibility in logs and its
+explicit status as the authorization boundary. `src/logging.ts`
+(`deriveLabel`, HMAC-based, never the raw cookie) landed in
+[`0e5628c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/0e5628ccfab469b005939229fd969ff173fd2f11),
+and a follow-up privacy-hardening pass in
+[`ae083a3`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/ae083a32ba27f92efa781295c54e00a22831a34f)
+removed a raw `voter_id` from `DuplicateVoteError`'s message and introduced
+`logInternalError` (operation label + error type only). `docs/adr/0001` and
+`docs/adr/0003` record the C9/C10 decisions; `reflections/crit-{8,9,10}.md`
+cover each week's own breakthrough and gap.
 
-**Read-only audit, again before any code.** `src/http/voter.ts`'s cookie
-minting, `src/api.ts`'s `hasVoted` scoping, `src/db/votes.ts`'s uniqueness
-constraint, `src/http/events.ts`'s connection handling, and every existing
-`console.*` call site were read before anything was written. Conclusions:
-two Chrome profiles already get distinct identities for free (each is its
-own cookie jar, and `getOrCreateVoterId` only mints when no cookie arrives);
-no endpoint accepts a client-supplied voter id anywhere, so there was no
-existing spoofing surface to close; and the app had essentially no
-structured operational logging — six `console.*` calls total, all startup
-noise or raw exception dumps, none saying who voted, who connected, or what
-a round resolved to. That gap, not an authorization hole, was the actual
-target.
+## The final project: from one open lane to a ten-level maze
 
-**Implementation and privacy-safe labelling.** `src/logging.ts` is new: one
-structured JSON line per event, for identity creation, SSE connect/disconnect,
-accepted/rejected votes (with reason), and round resolution (result, tally,
-whether the character moved). The design question was how to name a player
-in a log line without the log becoming a second copy of their voting
-credential; `docs/adr/0003-anonymous-identity-and-authorization.md` records
-the answer: `deriveLabel` HMACs the cookie under a server-only key
-(`VOTER_LABEL_SECRET`, or a random per-process key if unset) and truncates
-the digest — stable within a session, one-way, never the raw cookie.
-`round.resolved` logs only after its transaction commits
-(`src/game/lifecycle.ts`), the same timing rule `buildStatePayload` already
-used, so the log stream can't become a new tally-leak channel. This landed in
-[`0e5628c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/0e5628ccfab469b005939229fd969ff173fd2f11)
-with `spec/identity.test.ts` and `spec/logging.test.ts`: the former drives the
-real running app over HTTP to confirm two cookie jars get distinct identities,
-duplicate votes are rejected per-cookie, `hasVoted` never leaks across
-identities, and two concrete spoof attempts (a `voterId` field in the vote
-body, a `voterId` query string on `/api/state`) do nothing; the latter checks
-the logger's own output in-process, since the spec harness only reaches the
-app over HTTP.
+The brief's "good, full-stack, multi-user app" needed more than a lane with
+one shared position — the existing hidden-vote/anonymous-identity/real-time
+foundation was sound, but there was no level, no stakes, nothing to disagree
+*about*. The final project built that on top, milestone by milestone, each
+one scoped and approved before implementation, so scope stayed bounded
+rather than growing mid-task.
 
-**The privacy-hardening review.** Before committing, a focused review checked
-the diff for any error path that could leak a raw voter id, and found two:
-`DuplicateVoteError`'s message interpolated the raw `voter_id`, unused by any
-logger today but one careless future `console.error(err)` away from a leak;
-and the three remaining generic `console.error(err)` catch-alls in
-`src/api.ts`/`src/server.ts` would print such a message in full if that ever
-changed. Both were fixed in
-[`ae083a3`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-chaliang407/commit/ae083a32ba27f92efa781295c54e00a22831a34f):
-`DuplicateVoteError` now carries `roundId` as a typed property instead of
-interpolating the voter id at all, and the catch-alls call a new
-`logInternalError(operation, err)` that logs only a fixed operation label and
-the error's `.name` — never `.message` or `.stack`. Two regression tests pin
-this down: the error's message/stack never contain a voter id, and the 409
-duplicate-vote response body is unchanged. The two C10 commits were kept
-deliberately separate — identity/logging, then hardening — so the history
-shows the audit finding and its fix as two legible steps, matching the
-two-pass discipline (tests passing vs. an adversarial review) C9's reflection
-already named as worth keeping.
+**Milestones 1–2: ten validated levels, non-destructive migration.** Ten
+fixed maze layouts (`src/game/levels.ts`), each larger than the last, each
+checked by a shared validator (`src/game/mazeValidator.ts`) for full floor
+connectivity, at least one dead end and one intersection, a genuine cycle,
+and at least two distinct start-to-exit route lengths — the same standard
+C8's own hand-verified maze met, now automated and applied to all ten
+(`spec/levels.test.ts`). The database shape changed from a 1D
+`position`/`level` pair to 2D `x`/`y` plus `level`/`score`, which has no
+lossless mapping from the old shape — rather than lose history, the old
+`character`/`rounds`/`votes` tables are archived by rename
+(`*_legacy_pre_maze`) inside one transaction, and the newer `level`/`score`
+columns are added additively via `ALTER TABLE` on top of that, with a
+snapshot table preserving the exact pre-migration character row. A
+pre-migration `won=1` meant "reached the old single maze's exit," not
+"completed ten levels," so that one value is explicitly reset to `0` and
+logged, never silently carried forward as a false victory
+(`spec/migration.test.ts`, `spec/levelsMigration.test.ts`).
 
-**What's deliberately unverified.** As with C9's own gaps: this logging has
-been built and tested against the real running app's HTTP/SSE surface and,
-separately, the logger's own output in-process — but not yet exercised as a
-live two-Chrome-profile session narrated from `fly logs`, and the app hasn't
-been redeployed since C9. Configuring `VOTER_LABEL_SECRET` as a Fly secret,
-so that a player's log label survives a machine auto-stop/restart rather than
-changing with each new process, is also still pending — it requires a
-deliberate `flyctl secrets set` step this round of work stopped short of,
-rather than code. `reflections/crit-10.md` says the same.
+**Milestone 3: pellets and scoring.** Server-authoritative pellet collection,
+guarded by one `UPDATE ... WHERE collected = 0` so a tile can't be
+double-scored, wired into the same transaction that already moves the
+character (`spec/pellets.test.ts`).
 
-## The documented decisions, together
+**Milestone 4: level progression, victory, restart.** Reaching a level's EXIT
+advances to the next level's START (or sets final victory at level 10);
+Restart Game resets level, score, every level's pellets, and every enemy
+back to spawn, all inside one transaction, so a crash partway through can't
+leave a half-reset game (`spec/levelProgression.test.ts`).
 
-`docs/adr/0001-hidden-votes-visible-outcomes.md` (C9) and
-`docs/adr/0003-anonymous-identity-and-authorization.md` (C10) now cover
-complementary halves of the same underlying model: who the server believes a
-request is from, and what it will and won't show that identity. Neither
-reopens the other — C10's identity work treats C9's hidden-tally rule as a
-fixed constraint on its own logging design, not a decision available to
-revisit.
+**Milestone 5: enemies and collisions.** Enemies move one random walkable
+tile per resolved round via an injectable `rng` (defaulting to
+`Math.random`), which is what let `spec/collision.test.ts` assert an exact
+forced collision rather than retrying real randomness until one happened. A
+collision costs 20 points (floored at zero) and overrides any level
+transition that same round. Testing random movement without flakiness took a
+second pass: `spec/levelProgression.test.ts`'s level-advance tests originally
+retried real random walks until they happened to avoid every enemy, which
+could in principle still flake; they were rewritten to use a small seeded
+PRNG (`mulberry32`) with per-level seeds verified offline to be
+collision-free, removing the retry loop entirely.
+
+**Milestone 6: frontend integration, and a real bug caught by browser
+verification.** `public/index.html`'s maze now renders from `/api/state`'s
+own per-level `maze` field rather than the old single-maze endpoint, with
+pellets, enemies, a HUD, and an event banner for server-confirmed collisions
+and level transitions — added because the existing `/api/state` had no
+public signal distinguishing "the character moved" from "the character got
+hit," so two new `rounds` columns (`collided`, `advanced_level`) were added,
+written only after a round's resolving transaction commits, the same timing
+rule already governing tally exposure. Browser verification (Playwright,
+headless Chromium, screenshots at desktop and mobile widths down to 320px)
+caught a real defect before it shipped: the round that completes level 10
+also sets `advancedLevel = true` (the same flag an ordinary 1→2 transition
+sets), so the frontend was about to show a "LEVEL 10 UNLOCKED" banner at the
+exact moment the player actually won. Fixed by only announcing an advance
+when the game isn't also won by that same round. A second gap surfaced on
+review: the real-app enemy-sync test checked that positions matched across
+two clients and that the enemy count was unchanged, both of which would
+still pass even if enemy movement were silently broken; it now asserts
+directly that each enemy's position differs from its pre-round position,
+which the production movement rule guarantees whenever enemies actually move.
+
+## What's deliberately unverified
+
+As with C9 and C10's own gaps: the ten-level build has been exercised
+against a running app over HTTP/SSE and in a real headless browser, but not
+yet against the *deployed* Fly app, which — as of this writing — is still
+serving the pre-maze build; `VOTER_LABEL_SECRET` also remains unset as a Fly
+secret, so player log labels still reset on every machine restart in
+production. Both are next steps, not oversights.

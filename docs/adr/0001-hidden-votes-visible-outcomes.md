@@ -2,7 +2,14 @@
 
 ## Status
 
-Accepted, C9 (week 10).
+Accepted, C9 (week 10). The vote vocabulary referenced below (`LEFT`/`JUMP`/
+`RIGHT`) is the one that existed at the time this decision was made, for the
+single-lane prototype C9 was built on. The final project later replaced it
+with a four-directional `UP`/`DOWN`/`LEFT`/`RIGHT` vote across a ten-level
+maze (see `PROCESS.md`'s final-project section) — the hidden-vote/
+visible-outcome decision recorded here is unchanged by that: it still governs
+exactly which fields cross the wire while a round is open, regardless of
+which action set those votes are drawn from.
 
 ## Context
 

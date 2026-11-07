@@ -3,10 +3,11 @@
 ## What this app is
 
 A real-time multiplayer game where every visitor votes each round on a
-shared character's action (`LEFT`/`JUMP`/`RIGHT`); a unique majority moves
-it, a genuine tie holds it still, and an empty round is suppressed rather
-than shown as disagreement. Each visitor is an anonymous cookie identity
-(C10), told apart from every other without accounts, with server-side logs
+shared character's direction (`UP`/`DOWN`/`LEFT`/`RIGHT`) through a ten-level
+maze; a unique majority moves it, a genuine tie holds it still, and an empty
+round is suppressed rather than shown as disagreement. Each visitor is an
+anonymous cookie identity (C10), told apart from every other without
+accounts, with server-side logs
 recording who did what in a privacy-safe form. See `README.md` for the full
 rules and `docs/adr/` for the C9 design decisions (hidden votes vs. visible
 outcomes, and why SSE over WebSockets/polling) and the C10 decision

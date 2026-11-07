@@ -28,3 +28,8 @@ mise.local.toml
 # your course API key, and this repo goes public when you ship. Your tracked
 # harness is CLAUDE.md (and any AGENTS.md), not this directory.
 .claude/
+
+# Stale Astro tooling cache from before the stack moved to plain node:http —
+# never tracked, and CLAUDE.md's own git-workflow rules call out not staging
+# it by accident.
+.astro/
