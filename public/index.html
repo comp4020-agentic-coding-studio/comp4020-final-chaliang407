@@ -3,24 +3,40 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>One Character, Many Players</title>
+    <title>The Collective Maze</title>
     <style>
       :root {
         color-scheme: dark;
-        --bg: #11141a;
-        --stage-bg: #171c26;
-        --ink: #eef1f6;
-        --muted: #9aa4b5;
-        --accent: #5fb4ff;
-        --locked: #3a4457;
-        --tie: #c7a84a;
-        --ground: #52607a;
-        --platform: #6d7ea0;
+        --bg-deep: #0a0e1a;
+        --bg: #0d1220;
+        --panel: #121a2e;
+        --panel-edge: #1f2b47;
+        --ink: #eef2ff;
+        --muted: #8b96b8;
+        --cyan: #4fe3ff;
+        --cyan-dim: #1e5a6b;
+        --violet: #b06bff;
+        --violet-dim: #4a2d78;
+        --wall-top: #28345a;
+        --wall-face: #141b33;
+        --wall-edge: #3a4a7a;
+        --floor-a: #1a2744;
+        --floor-b: #1e2c4c;
+        --floor-glow: rgb(79 227 255 / 0.05);
+        --start: #35d08f;
+        --start-dim: #0f4a34;
+        --exit-glow: #c86bff;
         --char: #ffd166;
-        --char-shade: #c98a2e;
-        --char-face: #2a2118;
+        --char-dark: #8a5a12;
+        --char-face: #3a2608;
+        --tie: #e8b84b;
+        --locked: #26304a;
+        --danger: #ff6b6b;
         --focus: #ffffff;
-        --radius: 14px;
+        --radius-lg: 20px;
+        --radius-md: 14px;
+        --radius-sm: 8px;
+        --font-display: ui-rounded, "Segoe UI Rounded", system-ui, sans-serif;
       }
 
       * {
@@ -44,34 +60,154 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        padding: 1.25rem 1rem 2.5rem;
-        gap: 1rem;
+        padding: 1rem 1rem 2rem;
+        gap: 0.85rem;
+        background:
+          radial-gradient(ellipse 60% 40% at 50% 0%, rgb(79 227 255 / 0.07), transparent),
+          radial-gradient(ellipse 50% 35% at 100% 100%, rgb(176 107 255 / 0.06), transparent),
+          var(--bg-deep);
+        background-attachment: fixed;
       }
 
+      /* ---- header / identity ---- */
       header {
         text-align: center;
-        max-width: 42rem;
+        max-width: 38rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.15rem;
       }
 
       h1 {
-        font-size: 1.3rem;
-        margin: 0 0 0.25rem;
-        font-weight: 600;
+        font-family: var(--font-display);
+        font-size: clamp(1.3rem, 4vw, 1.7rem);
+        margin: 0;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        background: linear-gradient(90deg, var(--cyan), var(--violet));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
       }
 
-      header p {
+      header .tagline {
         margin: 0;
         color: var(--muted);
-        font-size: 0.9rem;
+        font-size: 0.85rem;
+        max-width: 28rem;
+      }
+
+      header .howto {
+        margin: 0.3rem 0 0;
+        color: var(--cyan);
+        font-size: 0.78rem;
+        font-weight: 600;
+        max-width: 30rem;
+        background: rgb(79 227 255 / 0.08);
+        border: 1px solid var(--cyan-dim);
+        border-radius: 999px;
+        padding: 0.3rem 0.9rem;
       }
 
       main {
         width: 100%;
-        max-width: 42rem;
+        max-width: 34rem;
         display: flex;
         flex-direction: column;
-        gap: 0.9rem;
+        gap: 0.75rem;
         position: relative;
+      }
+
+      .layout {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .col-maze {
+        min-width: 0;
+      }
+
+      .col-side {
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+        min-width: 0;
+      }
+
+      /* Two-column desktop layout: maze dominant on the left, a compact
+         status/controls/history column on the right — the whole interactive
+         experience fits one viewport without vertical scrolling. The
+         threshold is wide enough that a narrower laptop window still gets
+         the single-column, maze-on-top layout below it. */
+      @media (min-width: 900px) {
+        main {
+          max-width: 68rem;
+        }
+
+        .layout {
+          flex-direction: row;
+          align-items: flex-start;
+          gap: 1.25rem;
+        }
+
+        .col-maze {
+          flex: 1 1 auto;
+          max-width: 40rem;
+        }
+
+        .col-side {
+          flex: 0 0 17rem;
+          position: sticky;
+          top: 1rem;
+        }
+      }
+
+      /* ---- HUD: level / score / pellets remaining ---- */
+      #hud {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.5rem;
+        padding: 0.65rem 0.5rem;
+        background: var(--panel);
+        border: 1px solid var(--panel-edge);
+        border-radius: var(--radius-md);
+      }
+
+      .hud-stat {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.1rem;
+      }
+
+      .hud-label {
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .hud-value {
+        font-family: var(--font-display);
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+
+      #hud-level {
+        color: var(--cyan);
+      }
+
+      #hud-score {
+        color: var(--char);
+      }
+
+      #hud-pellets {
+        color: var(--violet);
       }
 
       /* ---- round status strip ---- */
@@ -80,210 +216,696 @@
         align-items: center;
         justify-content: space-between;
         gap: 0.75rem;
-        font-size: 0.9rem;
-        color: var(--muted);
-        padding: 0 0.1rem;
+        padding: 0.5rem 0.9rem;
+        background: var(--panel);
+        border: 1px solid var(--panel-edge);
+        border-radius: var(--radius-md);
       }
 
       #round-status .phase {
         color: var(--ink);
         font-weight: 600;
+        font-size: 0.85rem;
+      }
+
+      #timer-ring {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      #timer-track {
+        position: relative;
+        width: 34px;
+        height: 34px;
+        flex: none;
+      }
+
+      #timer-track svg {
+        width: 100%;
+        height: 100%;
+        transform: rotate(-90deg);
+      }
+
+      #timer-track circle.bg {
+        fill: none;
+        stroke: var(--locked);
+        stroke-width: 4;
+      }
+
+      #timer-track circle.fg {
+        fill: none;
+        stroke: var(--cyan);
+        stroke-width: 4;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 0.2s linear, stroke 0.2s ease;
+      }
+
+      #timer-track[data-urgent="true"] circle.fg {
+        stroke: var(--danger);
       }
 
       #timer {
         font-variant-numeric: tabular-nums;
-        font-size: 1rem;
+        font-size: 0.95rem;
+        font-weight: 700;
         color: var(--ink);
-      }
-
-      /* ---- stage ---- */
-      #stage {
-        position: relative;
-        height: clamp(260px, 46vh, 380px);
-        border-radius: var(--radius);
-        background: var(--stage-bg);
-        overflow: hidden;
-        border: 1px solid #262c38;
-      }
-
-      #world {
-        position: absolute;
-        inset: 0;
-      }
-
-      /* shallow "floor" and "elevated platform" strata — just enough fill to
-         read as two levels of ground, not a full scene */
-      #ground-fill {
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        height: 22%;
-        background: linear-gradient(to top, #202738, transparent);
-        border-top: 1px solid #2e3650;
-      }
-
-      #platform-fill {
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 52%;
-        height: 16%;
-        background: linear-gradient(to top, rgb(109 126 160 / 0.16), transparent);
-      }
-
-      #center-guide {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        left: 50%;
-        width: 1px;
-        background: repeating-linear-gradient(
-          to bottom,
-          rgb(238 241 246 / 0.12) 0 6px,
-          transparent 6px 14px
-        );
-      }
-
-      .lane {
-        position: absolute;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background-repeat: repeat-x;
-        background-image: repeating-linear-gradient(
-          90deg,
-          currentColor 0 3px,
-          transparent 3px 64px
-        );
-        transition: background-position 0.35s ease;
+        min-width: 2.6em;
+        text-align: right;
       }
 
       @media (prefers-reduced-motion: reduce) {
-        .lane,
-        #character {
-          transition: none !important;
+        #timer-track circle.fg {
+          transition: none;
         }
       }
 
-      #ground-lane {
-        bottom: 22%;
-        color: var(--ground);
+      /* ---- stage: the maze itself ---- */
+      #stage {
+        position: relative;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(160deg, #0f1730, #0a0f22);
+        overflow: hidden;
+        border: 1px solid var(--panel-edge);
+        padding: 0.65rem;
+        box-shadow:
+          0 20px 50px rgb(0 0 0 / 0.5),
+          inset 0 1px 0 rgb(255 255 255 / 0.03);
       }
 
-      #platform-lane {
-        bottom: 52%;
-        color: var(--platform);
+      #maze-grid {
+        position: relative;
+        display: grid;
+        width: 100%;
+        aspect-ratio: var(--maze-aspect, 10 / 9);
+        /* No gap: floor cells now touch and read as continuous corridor
+           rather than a grid of isolated chips. Walls still read as solid
+           because of their own gradient + the sharp color jump at a
+           wall/floor boundary, not because of a gap between tiles. */
+        gap: 0;
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        background: var(--wall-face);
+        /* One continuous ambient glow over the whole floor area, instead of
+           a per-tile inset shadow — this is what makes the walkable area
+           read as one lit space rather than a mosaic of separately-lit
+           squares. */
+        box-shadow: inset 0 0 70px 10px rgb(79 227 255 / 0.05);
       }
 
+      .cell {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+      }
+
+      /* Walls: dimensional dark-blue blocks with a lit top edge and a darker
+         face. No per-cell border — adjacent wall cells fuse into one solid
+         mass, which reads as "solid" more convincingly than a grid of
+         separately outlined bricks. */
+      .cell[data-kind="wall"] {
+        background: linear-gradient(165deg, var(--wall-top) 0%, var(--wall-face) 60%, #0a0f22 100%);
+        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.35);
+      }
+
+      /* Floor: a flat, bright base colour with an extremely subtle two-tone
+         checker for texture — no per-tile border or shadow, so neighbouring
+         floor cells blend into one continuous corridor instead of looking
+         like separate tiles. */
+      .cell[data-kind="floor"] {
+        background: var(--floor-a);
+      }
+
+      .cell[data-kind="floor"].alt {
+        background: var(--floor-b);
+      }
+
+      .cell[data-kind="start"] {
+        background: var(--floor-a);
+        box-shadow: inset 0 0 0 2px rgb(53 208 143 / 0.55);
+      }
+
+      .cell[data-kind="exit"] {
+        background: var(--floor-a);
+        box-shadow: inset 0 0 0 2px rgb(200 107 255 / 0.6);
+      }
+
+      /* The exit portal: a pulsing glowing ring, the clearest "this is the
+         destination" signal in the maze. */
+      .portal-ring {
+        position: absolute;
+        inset: 8%;
+        border-radius: 50%;
+        border: 2px solid var(--exit-glow);
+        box-shadow:
+          0 0 12px 2px rgb(200 107 255 / 0.6),
+          inset 0 0 10px rgb(200 107 255 / 0.4);
+        animation: portal-pulse 2.4s ease-in-out infinite;
+      }
+
+      @keyframes portal-pulse {
+        0%,
+        100% {
+          transform: scale(0.88);
+          opacity: 0.7;
+        }
+        50% {
+          transform: scale(1.05);
+          opacity: 1;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .portal-ring {
+          animation: none;
+          transform: scale(1);
+          opacity: 0.9;
+        }
+      }
+
+      /* A small corner badge, not a full-cell centered label: when the
+         shared character is standing on START, the badge still peeks out
+         from the corner instead of being fully hidden underneath it, so
+         START stays recognizable even while occupied. */
+      .cell-label {
+        position: absolute;
+        top: 2px;
+        left: 3px;
+        font-size: clamp(0.4rem, 1.8cqi, 0.56rem);
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        color: var(--ink);
+        text-transform: uppercase;
+        text-shadow: 0 1px 4px rgb(0 0 0 / 0.9);
+        container-type: inline-size;
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .cell[data-kind="start"] .cell-label {
+        color: var(--start);
+      }
+
+      .cell[data-kind="exit"] .cell-label {
+        color: #e9c9ff;
+      }
+
+      /* ---- the shared character ---- */
+      /* Sized to ~72% of a cell and centered within it (via left/top +
+         translate, set in JS) rather than filling the cell edge-to-edge —
+         this is what keeps a START/EXIT corner badge or the exit's portal
+         ring visible even while the character is standing on that tile. */
       #character {
         position: absolute;
-        left: 50%;
-        bottom: calc(22% - 1px);
-        width: 68px;
-        height: 68px;
-        margin-left: -34px;
+        width: calc(100% / var(--maze-cols) * 0.72);
+        height: calc(100% / var(--maze-rows) * 0.72);
+        margin-left: calc(100% / var(--maze-cols) * -0.36);
+        margin-top: calc(100% / var(--maze-rows) * -0.36);
         border-radius: 50%;
-        background: radial-gradient(circle at 35% 30%, #ffe4a3, var(--char) 55%, var(--char-shade) 100%);
+        background: radial-gradient(circle at 32% 28%, #fff2cc, var(--char) 50%, var(--char-dark) 100%);
         box-shadow:
-          0 10px 20px rgb(0 0 0 / 0.4),
-          inset 0 -8px 12px rgb(0 0 0 / 0.18);
+          0 3px 10px rgb(0 0 0 / 0.55),
+          0 0 14px 2px rgb(255 209 102 / 0.45),
+          inset 0 -5px 7px rgb(0 0 0 / 0.2);
         transition:
-          transform 0.35s ease,
-          bottom 0.35s ease;
+          top 0.28s cubic-bezier(0.34, 1.3, 0.64, 1),
+          left 0.28s cubic-bezier(0.34, 1.3, 0.64, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2;
+        animation: char-idle 2.6s ease-in-out infinite;
       }
 
-      #character[data-level="1"] {
-        bottom: calc(52% - 1px);
+      @keyframes char-idle {
+        0%,
+        100% {
+          transform: translateY(0) scale(1);
+        }
+        50% {
+          transform: translateY(-6%) scale(1.03);
+        }
       }
 
-      #character::before,
-      #character::after {
+      #character[data-moving="true"] {
+        animation: char-hop 0.28s ease-out;
+      }
+
+      @keyframes char-hop {
+        0% {
+          transform: scale(1, 1);
+        }
+        35% {
+          transform: scale(1.18, 0.82);
+        }
+        70% {
+          transform: scale(0.92, 1.12);
+        }
+        100% {
+          transform: scale(1, 1);
+        }
+      }
+
+      #character[data-won="true"] {
+        background: radial-gradient(circle at 32% 28%, #f0e6ff, var(--violet) 50%, #5a2fa0 100%);
+        box-shadow:
+          0 3px 10px rgb(0 0 0 / 0.55),
+          0 0 20px 4px rgb(176 107 255 / 0.65),
+          inset 0 -5px 7px rgb(0 0 0 / 0.2);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #character {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+
+      /* An expressive little face: two eyes + a curved smile, all drawn with
+         pseudo-elements so no extra DOM is needed per state. */
+      #character .face {
+        position: relative;
+        width: 46%;
+        height: 46%;
+      }
+
+      #character .face::before,
+      #character .face::after {
         content: "";
         position: absolute;
-        top: 38%;
-        width: 7px;
-        height: 7px;
+        top: 18%;
+        width: 16%;
+        height: 16%;
         border-radius: 50%;
         background: var(--char-face);
       }
 
-      #character::before {
-        left: 28%;
+      #character .face::before {
+        left: 14%;
       }
 
-      #character::after {
-        left: 65%;
+      #character .face::after {
+        right: 14%;
       }
 
-      #character .face {
+      #character .smile {
         position: absolute;
         left: 50%;
-        bottom: 26%;
-        width: 18px;
-        height: 9px;
-        margin-left: -9px;
-        border: 2px solid var(--char-face);
+        bottom: 6%;
+        width: 48%;
+        height: 30%;
+        margin-left: -24%;
+        border: 3px solid var(--char-face);
         border-top: none;
-        border-radius: 0 0 9px 9px;
+        border-left: none;
+        border-right: none;
+        border-radius: 0 0 50% 50% / 0 0 100% 100%;
+      }
+
+      #character[data-won="true"] .smile {
+        height: 38%;
+        border-width: 3.5px;
+      }
+
+      /* ---- pellets: small bonus dots, server-authoritative ----
+         A diamond (not a circle) so a colourblind player can tell a pellet
+         apart from the circular player/enemy markers by shape alone, not
+         just colour. */
+      .pellet {
+        position: absolute;
+        width: calc(100% / var(--maze-cols) * 0.26);
+        height: calc(100% / var(--maze-rows) * 0.26);
+        margin-left: calc(100% / var(--maze-cols) * -0.13);
+        margin-top: calc(100% / var(--maze-rows) * -0.13);
+        border-radius: 3px;
+        transform: rotate(45deg);
+        background: radial-gradient(circle at 35% 30%, #fff8e0, var(--violet) 60%, var(--violet-dim) 100%);
+        box-shadow: 0 0 6px 1px rgb(176 107 255 / 0.5);
+        z-index: 1;
         pointer-events: none;
       }
 
-      /* ---- vote lock state badge over stage ---- */
+      /* ---- enemies: hostile, server-authoritative-only positions ----
+         A ghost silhouette (rounded head, scalloped feet) rather than the
+         player's plain circle, so shape alone — not just the red/yellow
+         colour split — separates it from the player and from the diamond
+         pellets/EXIT ring. Sized and centered exactly like the previous
+         marker (same 0.6-of-a-cell box, same centering math), so this is a
+         pure visual swap: nothing about position, movement, or collision
+         changes here. */
+      .enemy {
+        position: absolute;
+        width: calc(100% / var(--maze-cols) * 0.6);
+        height: calc(100% / var(--maze-rows) * 0.6);
+        margin-left: calc(100% / var(--maze-cols) * -0.3);
+        margin-top: calc(100% / var(--maze-rows) * -0.3);
+        z-index: 1;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* drop-shadow (not box-shadow) follows the ghost's own silhouette
+           rather than its square bounding box, so the glow reads as coming
+           from the ghost itself. */
+        filter: drop-shadow(0 2px 5px rgb(0 0 0 / 0.5)) drop-shadow(0 0 7px rgb(255 107 107 / 0.65));
+      }
+
+      .enemy svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+        overflow: visible;
+      }
+
+      .enemy .ghost-body {
+        fill: var(--danger);
+      }
+
+      .enemy .ghost-highlight {
+        fill: rgb(255 255 255 / 0.2);
+      }
+
+      .enemy .ghost-eye {
+        fill: #fff;
+      }
+
+      .enemy .ghost-pupil {
+        fill: #3a0a0a;
+      }
+
+      /* ---- vote lock state badge over stage ----
+         Bottom-anchored, distinct from the top-anchored reveal banner, so
+         the two can never visually collide even in the brief window where
+         both might be relevant at a round boundary. */
       #vote-banner {
         position: absolute;
-        top: 0.6rem;
+        bottom: 0.55rem;
         left: 50%;
         transform: translateX(-50%);
-        background: rgb(0 0 0 / 0.55);
-        border: 1px solid #333c4c;
-        padding: 0.3rem 0.75rem;
+        background: rgb(10 14 26 / 0.85);
+        border: 1px solid var(--cyan-dim);
+        padding: 0.3rem 0.8rem;
         border-radius: 999px;
-        font-size: 0.8rem;
-        color: var(--ink);
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--cyan);
         display: none;
+        z-index: 3;
+        backdrop-filter: blur(3px);
       }
 
       #vote-banner[data-show="true"] {
         display: block;
       }
 
-      /* ---- controls ---- */
+      /* ---- reveal banner ----
+         A brief, small, top-anchored banner rather than a full-stage
+         overlay: it announces the winning direction without blocking the
+         player's view of the maze or the character's new position, and it
+         clears itself quickly (REVEAL_MS in the script below). */
+      #reveal {
+        position: absolute;
+        top: 0.55rem;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        align-items: center;
+        gap: 0.4rem;
+        background: rgb(8 12 24 / 0.9);
+        border: 1px solid var(--panel-edge);
+        border-radius: 999px;
+        padding: 0.4rem 1rem;
+        box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+        z-index: 4;
+        font-weight: 800;
+        font-size: 0.9rem;
+        white-space: nowrap;
+      }
+
+      #reveal[data-show="true"] {
+        display: flex;
+        animation: reveal-pop 0.18s ease-out;
+      }
+
+      @keyframes reveal-pop {
+        from {
+          opacity: 0;
+          transform: translateX(-50%) translateY(-6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #reveal[data-show="true"] {
+          animation: none;
+        }
+      }
+
+      #reveal-result[data-result="TIE"] {
+        color: var(--tie);
+      }
+
+      #reveal-result[data-result="UP"],
+      #reveal-result[data-result="DOWN"],
+      #reveal-result[data-result="LEFT"],
+      #reveal-result[data-result="RIGHT"] {
+        color: var(--cyan);
+      }
+
+      /* ---- event banner: server-confirmed collision / level-transition ----
+         Same top-anchored pill pattern as #reveal, but offset lower so the
+         two can appear in close succession (a round that both collides and
+         would-have-advanced) without overlapping. Driven only by
+         recentRounds[].collided / .advancedLevel from /api/state — never
+         inferred client-side from a score delta or a position jump. */
+      #event-banner {
+        position: absolute;
+        top: 3.1rem;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        align-items: center;
+        gap: 0.4rem;
+        border-radius: 999px;
+        padding: 0.4rem 1rem;
+        box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+        z-index: 4;
+        font-weight: 800;
+        font-size: 0.82rem;
+        white-space: nowrap;
+        text-align: center;
+      }
+
+      #event-banner[data-show="true"] {
+        display: flex;
+        animation: reveal-pop 0.18s ease-out;
+      }
+
+      #event-banner[data-kind="collision"] {
+        background: rgb(58 10 10 / 0.92);
+        border: 1px solid var(--danger);
+        color: #ffd9d9;
+      }
+
+      #event-banner[data-kind="advance"] {
+        background: rgb(20 10 38 / 0.92);
+        border: 1px solid var(--violet);
+        color: #f0e6ff;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #event-banner[data-show="true"] {
+          animation: none;
+        }
+      }
+
+      /* ---- victory overlay ---- */
+      #victory {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 50% 40%, rgb(176 107 255 / 0.28), rgb(8 10 20 / 0.92));
+        border-radius: var(--radius-lg);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 1.25rem;
+        z-index: 6;
+      }
+
+      #victory[data-show="true"] {
+        display: flex;
+        animation: fade-in 0.25s ease-out;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #victory[data-show="true"] {
+          animation: none;
+        }
+      }
+
+      #victory .card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        align-items: center;
+      }
+
+      #victory .title {
+        font-family: var(--font-display);
+        font-size: clamp(1.6rem, 7vw, 2.3rem);
+        font-weight: 800;
+        color: #f0e6ff;
+        text-shadow: 0 0 24px rgb(176 107 255 / 0.7);
+        margin: 0;
+      }
+
+      #victory .subtext {
+        color: var(--ink);
+        font-size: 0.9rem;
+        max-width: 22rem;
+        opacity: 0.85;
+      }
+
+      #victory .final-score {
+        font-family: var(--font-display);
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: var(--char);
+      }
+
+      #victory .final-score span {
+        font-size: 1.3rem;
+      }
+
+      #btn-restart {
+        appearance: none;
+        border: none;
+        border-radius: 999px;
+        margin-top: 0.35rem;
+        padding: 0.8rem 2.1rem;
+        font-size: 1.05rem;
+        font-weight: 800;
+        font-family: var(--font-display);
+        color: #0b0a17;
+        background: linear-gradient(90deg, var(--cyan), var(--violet));
+        cursor: pointer;
+        box-shadow:
+          0 8px 24px rgb(176 107 255 / 0.4),
+          0 0 0 1px rgb(255 255 255 / 0.15) inset;
+        transition:
+          transform 0.12s ease,
+          box-shadow 0.15s ease;
+      }
+
+      #btn-restart:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow:
+          0 10px 28px rgb(176 107 255 / 0.55),
+          0 0 0 1px rgb(255 255 255 / 0.2) inset;
+      }
+
+      #btn-restart:active:not(:disabled) {
+        transform: translateY(1px);
+      }
+
+      #btn-restart:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 3px;
+      }
+
+      #btn-restart:disabled {
+        background: var(--locked);
+        color: var(--muted);
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+
+      /* ---- controls: a game-pad style directional cross ---- */
+      #controls-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.6rem;
+        background: var(--panel);
+        border: 1px solid var(--panel-edge);
+        border-radius: var(--radius-lg);
+        padding: 0.9rem;
+      }
+
       #controls {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 0.6rem;
+        grid-template-rows: repeat(2, 1fr);
+        gap: 0.5rem;
+        width: 100%;
+        max-width: 15rem;
+        margin: 0 auto;
+      }
+
+      #btn-up {
+        grid-column: 2;
+        grid-row: 1;
+      }
+
+      #btn-left {
+        grid-column: 1;
+        grid-row: 2;
+      }
+
+      #btn-down {
+        grid-column: 2;
+        grid-row: 2;
+      }
+
+      #btn-right {
+        grid-column: 3;
+        grid-row: 2;
       }
 
       button.action {
         appearance: none;
-        border: none;
-        border-radius: var(--radius);
-        padding: 0.75rem 0.5rem;
-        font-size: 0.95rem;
-        font-weight: 600;
+        border: 1px solid #263257;
+        border-radius: var(--radius-md);
+        padding: 0.8rem 0.5rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
         color: var(--ink);
-        background: #1d222c;
+        background: linear-gradient(160deg, #1a2440, #121a30);
         cursor: pointer;
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 0.25rem;
+        box-shadow:
+          0 3px 0 #0a0f1f,
+          inset 0 1px 0 rgb(255 255 255 / 0.05);
         transition:
-          background 0.15s ease,
-          transform 0.1s ease;
+          background 0.12s ease,
+          transform 0.08s ease,
+          box-shadow 0.08s ease,
+          border-color 0.12s ease;
       }
 
       button.action .glyph {
-        font-size: 1.15rem;
+        font-size: 1.4rem;
+        line-height: 1;
       }
 
       button.action:hover:not(:disabled) {
-        background: #252c39;
+        border-color: var(--cyan-dim);
+        background: linear-gradient(160deg, #202c4e, #161f38);
       }
 
       button.action:active:not(:disabled) {
-        transform: translateY(1px);
+        transform: translateY(2px);
+        box-shadow:
+          0 1px 0 #0a0f1f,
+          inset 0 1px 0 rgb(255 255 255 / 0.05);
       }
 
       button.action:focus-visible {
@@ -291,127 +913,89 @@
         outline-offset: 2px;
       }
 
+      /* Selected: this tab's own vote, locked in for the round. */
       button.action[aria-pressed="true"] {
-        background: var(--accent);
-        color: #0b1017;
+        background: linear-gradient(160deg, var(--cyan), #2a9db8);
+        color: #04131a;
+        border-color: var(--cyan);
+        box-shadow:
+          0 3px 0 #0c5566,
+          0 0 16px 1px rgb(79 227 255 / 0.5);
       }
 
-      button.action:disabled {
-        background: var(--locked);
+      /* Locked: round is deciding, this button wasn't the one picked. */
+      button.action:disabled:not([aria-pressed="true"]) {
+        background: #141a2c;
         color: var(--muted);
+        border-color: #1c2440;
+        box-shadow: none;
         cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      /* Disabled because the maze is won — visually distinct (dimmer, no
+         hover affordance at all) from mid-round locking. */
+      #controls[data-maze-won="true"] button.action {
+        opacity: 0.3;
+        cursor: not-allowed;
+        box-shadow: none;
       }
 
       #lock-note {
         min-height: 1.2em;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+        font-weight: 600;
         color: var(--muted);
         text-align: center;
       }
 
-      /* ---- reveal overlay ---- */
-      #reveal {
-        position: absolute;
-        inset: 0;
-        background: rgb(10 12 16 / 0.5);
-        backdrop-filter: blur(2px);
-        border-radius: var(--radius);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        padding: 1rem;
+      #lock-note[data-state="locked"] {
+        color: var(--cyan);
       }
 
-      #reveal[data-show="true"] {
-        display: flex;
-      }
-
-      #reveal .card {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        align-items: center;
-        text-shadow: 0 1px 6px rgb(0 0 0 / 0.8);
-      }
-
-      #reveal .result {
-        font-size: 1.6rem;
-        font-weight: 700;
-      }
-
-      #reveal .result[data-result="TIE"] {
-        color: var(--tie);
-      }
-
-      #reveal .result[data-result="LEFT"],
-      #reveal .result[data-result="RIGHT"],
-      #reveal .result[data-result="JUMP"] {
-        color: var(--accent);
-      }
-
-      #reveal .subtext {
-        color: var(--muted);
-        font-size: 0.85rem;
-        max-width: 24rem;
-      }
-
-      #reveal .tally {
-        display: flex;
-        gap: 1.1rem;
-        font-size: 0.95rem;
-        margin-top: 0.2rem;
-      }
-
-      #reveal .tally div {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.15rem;
-      }
-
-      #reveal .tally .n {
-        font-weight: 700;
-        font-size: 1.1rem;
-      }
-
-      #reveal .tally .lbl {
-        color: var(--muted);
-        font-size: 0.72rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
+      #lock-note[data-state="won"] {
+        color: var(--violet);
       }
 
       /* ---- recent trace ---- */
+      #trace-panel {
+        background: var(--panel);
+        border: 1px solid var(--panel-edge);
+        border-radius: var(--radius-md);
+        padding: 0.6rem 0.75rem;
+      }
+
       #trace {
         display: flex;
         flex-wrap: wrap;
         gap: 0.4rem;
-        justify-content: center;
+        align-items: center;
       }
 
       #trace h2 {
         width: 100%;
-        font-size: 0.75rem;
+        font-size: 0.68rem;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.08em;
         color: var(--muted);
-        margin: 0.2rem 0 0.1rem;
-        font-weight: 600;
+        margin: 0 0 0.35rem;
+        font-weight: 700;
       }
 
       .trace-chip {
-        font-size: 0.78rem;
+        font-size: 0.76rem;
+        font-weight: 600;
         color: var(--muted);
-        background: #1b212c;
-        border: 1px solid #262c38;
+        background: #0f1527;
+        border: 1px solid #202a46;
         border-radius: 999px;
-        padding: 0.25rem 0.6rem;
+        padding: 0.25rem 0.65rem;
         white-space: nowrap;
       }
 
       .trace-chip b {
-        color: var(--ink);
+        color: var(--cyan);
+        font-weight: 800;
       }
 
       .trace-chip[data-result="TIE"] b {
@@ -419,7 +1003,7 @@
       }
 
       #conn-note {
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         color: var(--muted);
         min-height: 1em;
         text-align: center;
@@ -438,116 +1022,181 @@
       }
 
       @media (max-width: 420px) {
-        #stage {
-          height: 220px;
+        body {
+          padding: 0.75rem 0.65rem 1.5rem;
+          gap: 0.6rem;
         }
 
         button.action {
           padding: 0.65rem 0.3rem;
-          font-size: 0.85rem;
+          font-size: 0.72rem;
+        }
+
+        button.action .glyph {
+          font-size: 1.2rem;
+        }
+
+        #controls-panel {
+          padding: 0.7rem;
         }
       }
     </style>
   </head>
   <body>
     <header>
-      <h1>One Character, Many Players</h1>
-      <p>Every visitor votes. The crowd moves one shared character together.</p>
+      <h1>The Collective Maze</h1>
+      <p class="tagline">Every visitor votes. The crowd steers one shared explorer through the maze together.</p>
+      <p class="howto">⏱ Every 3 seconds the group votes on a direction — the majority moves the explorer. One vote per player, per round.</p>
     </header>
 
     <main>
-      <div id="round-status">
-        <span class="phase" id="phase-label">Loading…</span>
-        <span id="timer"></span>
-      </div>
-
-      <div id="stage">
-        <div id="world">
-          <div id="ground-fill" aria-hidden="true"></div>
-          <div id="platform-fill" aria-hidden="true"></div>
-          <div id="center-guide" aria-hidden="true"></div>
-          <div id="platform-lane" class="lane" aria-hidden="true"></div>
-          <div id="ground-lane" class="lane" aria-hidden="true"></div>
-          <div id="character" data-level="0" aria-hidden="true">
-            <span class="face"></span>
-          </div>
-        </div>
-        <div id="vote-banner" role="status"></div>
-        <div id="reveal" aria-hidden="true">
-          <div class="card">
-            <div class="result" id="reveal-result">—</div>
-            <div class="subtext" id="reveal-subtext"></div>
-            <div class="tally">
-              <div><span class="n" id="tally-left">0</span><span class="lbl">Left</span></div>
-              <div><span class="n" id="tally-jump">0</span><span class="lbl">Jump</span></div>
-              <div><span class="n" id="tally-right">0</span><span class="lbl">Right</span></div>
+      <div class="layout">
+        <div class="col-maze">
+          <div id="stage">
+            <div id="maze-grid" role="img" aria-label="The shared maze">
+              <div id="character" data-won="false" data-moving="false" aria-hidden="true">
+                <span class="face">
+                  <span class="smile"></span>
+                </span>
+              </div>
+            </div>
+            <div id="vote-banner" role="status"></div>
+            <div id="reveal" role="status" aria-hidden="true">
+              <span id="reveal-result">—</span>
+            </div>
+            <div id="event-banner" role="status" aria-hidden="true"></div>
+            <div id="victory" aria-hidden="true">
+              <div class="card">
+                <div class="title">✨ MAZE COMPLETE ✨</div>
+                <div class="subtext">The crowd got the explorer all the way through all ten levels, together.</div>
+                <div class="final-score">
+                  Final score: <span id="victory-score">0</span>
+                </div>
+                <button type="button" id="btn-restart">🔄 Restart Game</button>
+              </div>
             </div>
           </div>
         </div>
+
+        <aside class="col-side">
+          <div id="hud">
+            <div class="hud-stat">
+              <span class="hud-label">Level</span>
+              <span class="hud-value" id="hud-level">01 / 10</span>
+            </div>
+            <div class="hud-stat">
+              <span class="hud-label">Score</span>
+              <span class="hud-value" id="hud-score">0</span>
+            </div>
+            <div class="hud-stat">
+              <span class="hud-label">Pellets left</span>
+              <span class="hud-value" id="hud-pellets">0</span>
+            </div>
+          </div>
+
+          <div id="round-status">
+            <span class="phase" id="phase-label">Loading…</span>
+            <div id="timer-ring">
+              <div id="timer-track" data-urgent="false">
+                <svg viewBox="0 0 36 36" aria-hidden="true">
+                  <circle class="bg" cx="18" cy="18" r="15.5"></circle>
+                  <circle class="fg" id="timer-circle" cx="18" cy="18" r="15.5"></circle>
+                </svg>
+              </div>
+              <span id="timer"></span>
+            </div>
+          </div>
+
+          <div id="controls-panel">
+            <div id="controls" data-maze-won="false">
+              <button type="button" class="action" id="btn-up" data-action="UP">
+                <span class="glyph" aria-hidden="true">↑</span>
+                <span>Up</span>
+              </button>
+              <button type="button" class="action" id="btn-left" data-action="LEFT">
+                <span class="glyph" aria-hidden="true">←</span>
+                <span>Left</span>
+              </button>
+              <button type="button" class="action" id="btn-down" data-action="DOWN">
+                <span class="glyph" aria-hidden="true">↓</span>
+                <span>Down</span>
+              </button>
+              <button type="button" class="action" id="btn-right" data-action="RIGHT">
+                <span class="glyph" aria-hidden="true">→</span>
+                <span>Right</span>
+              </button>
+            </div>
+            <div id="lock-note"></div>
+          </div>
+
+          <div id="trace-panel">
+            <div id="trace" aria-hidden="false">
+              <h2>Recent rounds</h2>
+            </div>
+          </div>
+
+          <div id="conn-note"></div>
+        </aside>
       </div>
 
-      <div id="controls">
-        <button type="button" class="action" id="btn-left" data-action="LEFT">
-          <span class="glyph" aria-hidden="true">←</span>
-          <span>Left</span>
-        </button>
-        <button type="button" class="action" id="btn-jump" data-action="JUMP">
-          <span class="glyph" aria-hidden="true">↑</span>
-          <span>Jump</span>
-        </button>
-        <button type="button" class="action" id="btn-right" data-action="RIGHT">
-          <span class="glyph" aria-hidden="true">→</span>
-          <span>Right</span>
-        </button>
-      </div>
-      <div id="lock-note"></div>
-
-      <div id="trace" aria-hidden="false">
-        <h2>Recent rounds</h2>
-      </div>
-
-      <div id="conn-note"></div>
       <div id="announce" class="sr-only" role="status" aria-live="polite"></div>
     </main>
 
     <script type="module">
-      const STEP_PX = 64;
       // EventSource delivers the moment-to-moment sync now; this is only a
       // slow backstop in case a connection silently stalls in a way the
       // browser's own EventSource reconnect doesn't catch.
       const POLL_MS = 15000;
       const REVEAL_MS = 1200;
+      const MOVE_ANIM_MS = 300;
+      // Matches the stroke-dasharray math below (2*pi*r for r=15.5).
+      const TIMER_CIRCUMFERENCE = 2 * Math.PI * 15.5;
+
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
       const el = {
         phase: document.getElementById("phase-label"),
         timer: document.getElementById("timer"),
-        ground: document.getElementById("ground-lane"),
-        platform: document.getElementById("platform-lane"),
+        timerTrack: document.getElementById("timer-track"),
+        timerCircle: document.getElementById("timer-circle"),
+        grid: document.getElementById("maze-grid"),
         character: document.getElementById("character"),
         voteBanner: document.getElementById("vote-banner"),
         reveal: document.getElementById("reveal"),
         revealResult: document.getElementById("reveal-result"),
-        revealSubtext: document.getElementById("reveal-subtext"),
-        tallyLeft: document.getElementById("tally-left"),
-        tallyJump: document.getElementById("tally-jump"),
-        tallyRight: document.getElementById("tally-right"),
+        eventBanner: document.getElementById("event-banner"),
+        victory: document.getElementById("victory"),
+        victoryScore: document.getElementById("victory-score"),
+        btnRestart: document.getElementById("btn-restart"),
+        controls: document.getElementById("controls"),
+        btnUp: document.getElementById("btn-up"),
+        btnDown: document.getElementById("btn-down"),
         btnLeft: document.getElementById("btn-left"),
-        btnJump: document.getElementById("btn-jump"),
         btnRight: document.getElementById("btn-right"),
         lockNote: document.getElementById("lock-note"),
         trace: document.getElementById("trace"),
         connNote: document.getElementById("conn-note"),
         announce: document.getElementById("announce"),
+        hudLevel: document.getElementById("hud-level"),
+        hudScore: document.getElementById("hud-score"),
+        hudPellets: document.getElementById("hud-pellets"),
       };
 
-      const buttons = { LEFT: el.btnLeft, JUMP: el.btnJump, RIGHT: el.btnRight };
+      el.timerCircle.style.strokeDasharray = `${TIMER_CIRCUMFERENCE}`;
 
-      /** @type {{roundId: number|null, votedAction: string|null, revealTimer: number|null, resolvesAt: number|null, pollInFlight: boolean, pollQueued: boolean}} */
+      const buttons = { UP: el.btnUp, DOWN: el.btnDown, LEFT: el.btnLeft, RIGHT: el.btnRight };
+
+      /** @type {{roundId: number|null, votedAction: string|null, revealTimer: number|null, moveAnimTimer: number|null, resolvesAt: number|null, roundDurationMs: number|null, pollInFlight: boolean, pollQueued: boolean, maze: object|null, hasWon: boolean, restartPending: boolean, lastCharacterKey: string|null}} */
       const client = {
         roundId: null,
         votedAction: null,
         revealTimer: null,
+        moveAnimTimer: null,
         resolvesAt: null,
+        // Learned from the first round's own opensAt/resolvesAt span, so the
+        // countdown ring always reflects the server's actual round length
+        // (config.ts's ROUND_DURATION_MS) rather than a hard-coded guess.
+        roundDurationMs: null,
         // poll() can now be triggered from several independent sources — the
         // slow backstop interval, tick()'s own deadline check, an SSE
         // 'resolved' event, and an EventSource reconnect — which land within
@@ -555,53 +1204,238 @@
         // `pollInFlight`/`pollQueued` serialize these into at most one
         // request in flight plus one more queued right behind it, so two
         // overlapping calls can never both read the old `roundId` and both
-        // decide to fire a reveal for the same resolved round, and a request
+        // decide to show a reveal for the same resolved round, and a request
         // can never apply its result out of order after a later one already
         // ran (the next poll only starts once this one has fully applied).
         pollInFlight: false,
         pollQueued: false,
+        // The *active* maze is level-dependent and comes from /api/state's
+        // own `maze` field on every poll — never hardcoded to level 1 and
+        // never fetched from the old single-maze /api/maze endpoint. Cached
+        // here only so renderMazeGrid() can be skipped (and the DOM left
+        // alone) on polls where the level — and therefore the geometry —
+        // hasn't changed.
+        maze: null,
+        mazeLevelKey: null,
+        eventBannerTimer: null,
+        // The id of the round a collision/advance banner has already been
+        // shown for, so a slow backstop poll landing after the reveal banner
+        // doesn't re-trigger the same event-banner a second time.
+        lastEventRoundId: null,
+        hasWon: false,
+        // True from the moment this tab's own Restart Game click is sent
+        // until the next poll() resolves, so a double-click (or a second
+        // tab's independent click landing moments later) can't fire two
+        // requests from the same client — the server's own re-check of
+        // character.won inside restartGame's transaction is what actually
+        // makes concurrent restarts from *different* clients safe; this flag
+        // is purely a same-tab UX nicety on top of that.
+        restartPending: false,
+        // "x,y" of the last position actually rendered, purely to detect a
+        // real move (for the hop animation) vs. a re-render of the same spot.
+        lastCharacterKey: null,
       };
 
       function announce(text) {
         el.announce.textContent = text;
       }
 
-      function renderCharacter(character) {
-        el.character.style.transform = `translateX(${character.position * STEP_PX}px)`;
-        el.character.dataset.level = String(character.level);
-        const offset = `${-(character.position * STEP_PX)}px 0`;
-        el.ground.style.backgroundPosition = offset;
-        el.platform.style.backgroundPosition = offset;
+      function renderMazeGrid(maze) {
+        el.grid.style.setProperty("--maze-cols", maze.width);
+        el.grid.style.setProperty("--maze-rows", maze.height);
+        el.grid.style.setProperty("--maze-aspect", `${maze.width} / ${maze.height}`);
+        el.grid.style.gridTemplateColumns = `repeat(${maze.width}, 1fr)`;
+        el.grid.style.gridTemplateRows = `repeat(${maze.height}, 1fr)`;
+
+        // Remove any previously rendered cells — this now runs again on every
+        // level transition (each level has its own geometry), not just once.
+        el.grid.querySelectorAll(".cell").forEach((n) => n.remove());
+
+        const fragment = document.createDocumentFragment();
+        for (let y = 0; y < maze.height; y++) {
+          for (let x = 0; x < maze.width; x++) {
+            const cell = document.createElement("div");
+            cell.className = "cell";
+            const isStart = x === maze.start.x && y === maze.start.y;
+            const isExit = x === maze.exit.x && y === maze.exit.y;
+            const isWall = maze.rows[y][x] === "#";
+            cell.dataset.kind = isWall ? "wall" : isStart ? "start" : isExit ? "exit" : "floor";
+            // A faint two-tone checker on plain floor tiles only — just
+            // enough texture to read as "open ground" without competing with
+            // the START/EXIT glows or the walls.
+            if (!isWall && !isStart && !isExit && (x + y) % 2 === 0) {
+              cell.classList.add("alt");
+            }
+            cell.style.gridColumn = String(x + 1);
+            cell.style.gridRow = String(y + 1);
+            if (isStart || isExit) {
+              const label = document.createElement("span");
+              label.className = "cell-label";
+              label.textContent = isStart ? "Start" : "Exit";
+              cell.appendChild(label);
+            }
+            if (isExit) {
+              const ring = document.createElement("span");
+              ring.className = "portal-ring";
+              ring.setAttribute("aria-hidden", "true");
+              cell.appendChild(ring);
+            }
+            fragment.appendChild(cell);
+          }
+        }
+        // Insert before #character so the character always renders above cells.
+        el.grid.insertBefore(fragment, el.character);
       }
 
-      function renderControlsLocked(locked, votedAction) {
+      function renderCharacter(character, maze) {
+        const cellWidthPct = 100 / maze.width;
+        const cellHeightPct = 100 / maze.height;
+        const key = `${character.x},${character.y}`;
+        const moved = client.lastCharacterKey !== null && client.lastCharacterKey !== key;
+
+        // Centered within its cell (cell position + half a cell, offset back
+        // by half the character's own size via margin rather than
+        // `transform`, since `transform` is already driven by the
+        // char-idle/char-hop CSS animations and an inline transform would
+        // fight them for the same property). The character is sized smaller
+        // than a full cell precisely so this centering leaves a START/EXIT
+        // corner badge visible even when occupied.
+        el.character.style.left = `${(character.x + 0.5) * cellWidthPct}%`;
+        el.character.style.top = `${(character.y + 0.5) * cellHeightPct}%`;
+        el.character.dataset.won = String(character.won);
+
+        if (moved && !prefersReducedMotion) {
+          el.character.dataset.moving = "true";
+          if (client.moveAnimTimer) clearTimeout(client.moveAnimTimer);
+          client.moveAnimTimer = window.setTimeout(() => {
+            el.character.dataset.moving = "false";
+          }, MOVE_ANIM_MS);
+        }
+        client.lastCharacterKey = key;
+      }
+
+      // Pellets and enemies are both re-rendered from scratch on every poll —
+      // simplest correct approach, and cheap at this grid size. Positions
+      // come exclusively from /api/state (`state.pellets` / `state.enemies`);
+      // nothing here is simulated client-side.
+      function renderPellets(pellets, maze) {
+        el.grid.querySelectorAll(".pellet").forEach((n) => n.remove());
+        const cellWidthPct = 100 / maze.width;
+        const cellHeightPct = 100 / maze.height;
+        const fragment = document.createDocumentFragment();
+        for (const pellet of pellets) {
+          if (pellet.collected) continue;
+          const dot = document.createElement("span");
+          dot.className = "pellet";
+          dot.setAttribute("aria-hidden", "true");
+          dot.style.left = `${(pellet.x + 0.5) * cellWidthPct}%`;
+          dot.style.top = `${(pellet.y + 0.5) * cellHeightPct}%`;
+          fragment.appendChild(dot);
+        }
+        el.grid.insertBefore(fragment, el.character);
+      }
+
+      // Inline SVG (no external image/asset) for a classic arcade ghost
+      // silhouette: a rounded dome, straight sides, and a three-bump
+      // scalloped bottom edge, built once and cloned per enemy rather than
+      // re-parsed from a string each render.
+      const GHOST_SVG_MARKUP = `
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <path class="ghost-body" d="M8,56 L8,28 A24,24 0 0,1 56,28 L56,56 L48,48 L40,56 L32,48 L24,56 L16,48 Z" />
+          <ellipse class="ghost-highlight" cx="22" cy="20" rx="7" ry="5" />
+          <ellipse class="ghost-eye" cx="23" cy="30" rx="7.5" ry="9" />
+          <ellipse class="ghost-eye" cx="43" cy="30" rx="7.5" ry="9" />
+          <circle class="ghost-pupil" cx="25" cy="32" r="3.4" />
+          <circle class="ghost-pupil" cx="45" cy="32" r="3.4" />
+        </svg>
+      `;
+
+      function renderEnemies(enemies, maze) {
+        el.grid.querySelectorAll(".enemy").forEach((n) => n.remove());
+        const cellWidthPct = 100 / maze.width;
+        const cellHeightPct = 100 / maze.height;
+        const fragment = document.createDocumentFragment();
+        for (const enemy of enemies) {
+          const marker = document.createElement("span");
+          marker.className = "enemy";
+          marker.setAttribute("aria-hidden", "true");
+          marker.style.left = `${(enemy.x + 0.5) * cellWidthPct}%`;
+          marker.style.top = `${(enemy.y + 0.5) * cellHeightPct}%`;
+          marker.innerHTML = GHOST_SVG_MARKUP;
+          fragment.appendChild(marker);
+        }
+        el.grid.insertBefore(fragment, el.character);
+      }
+
+      function renderHud(character, pellets) {
+        const levelNum = String(character.level).padStart(2, "0");
+        el.hudLevel.textContent = `${levelNum} / 10`;
+        el.hudScore.textContent = String(character.score);
+        el.hudPellets.textContent = String(pellets.filter((p) => !p.collected).length);
+      }
+
+      function renderVictory(won, score) {
+        el.victory.dataset.show = String(won);
+        el.victory.setAttribute("aria-hidden", String(!won));
+        if (won && !client.hasWon) {
+          announce("The crowd reached EXIT on the final level! The maze is complete. Any player can restart.");
+        }
+        if (won) {
+          el.victoryScore.textContent = String(score);
+        }
+        if (!won) {
+          // A restart just happened (won flipped back to false) — the button
+          // is about to be hidden with the rest of #victory anyway, but
+          // clearing restartPending here means a *second* maze run's own
+          // future restart isn't left disabled by this one's in-flight state.
+          client.restartPending = false;
+        }
+        el.btnRestart.disabled = client.restartPending;
+        client.hasWon = won;
+      }
+
+      function renderControlsLocked(locked, votedAction, won) {
+        el.controls.dataset.mazeWon = String(won);
         for (const [action, btn] of Object.entries(buttons)) {
-          btn.disabled = locked;
+          btn.disabled = locked || won;
           btn.setAttribute("aria-pressed", String(locked && action === votedAction));
         }
-        if (locked) {
+        if (won) {
+          el.lockNote.textContent = "The maze is complete — EXIT reached.";
+          el.lockNote.dataset.state = "won";
+          el.voteBanner.dataset.show = "false";
+        } else if (locked) {
           el.lockNote.textContent = votedAction
-            ? `Locked in: ${votedAction}. Waiting for the round to end…`
-            : "You already voted this round. Waiting for the round to end…";
-          el.voteBanner.textContent = "Vote locked";
+            ? `✓ Locked in: ${votedAction} — waiting for the round to end…`
+            : "You already voted this round — waiting for the round to end…";
+          el.lockNote.dataset.state = "locked";
+          el.voteBanner.textContent = "Vote locked in";
           el.voteBanner.dataset.show = "true";
         } else {
-          el.lockNote.textContent = "Pick one. You can't change it once the round locks it in.";
+          el.lockNote.textContent = "Pick a direction — you can't change it once the round locks it in.";
+          el.lockNote.dataset.state = "open";
           el.voteBanner.dataset.show = "false";
         }
       }
 
       function renderTimer() {
-        if (client.resolvesAt == null) {
+        if (client.resolvesAt == null || client.hasWon) {
           el.timer.textContent = "";
+          el.timerCircle.style.strokeDashoffset = `${TIMER_CIRCUMFERENCE}`;
+          el.timerTrack.dataset.urgent = "false";
           return;
         }
         const remainingMs = client.resolvesAt - Date.now();
         if (remainingMs <= 0) {
-          el.timer.textContent = "resolving…";
+          el.timer.textContent = "…";
+          el.timerCircle.style.strokeDashoffset = "0";
           return;
         }
-        el.timer.textContent = `${(remainingMs / 1000).toFixed(1)}s left`;
+        el.timer.textContent = `${(remainingMs / 1000).toFixed(1)}s`;
+        const duration = client.roundDurationMs ?? remainingMs;
+        const fraction = Math.max(0, Math.min(1, remainingMs / duration));
+        el.timerCircle.style.strokeDashoffset = `${TIMER_CIRCUMFERENCE * (1 - fraction)}`;
+        el.timerTrack.dataset.urgent = String(remainingMs < 1000);
       }
 
       // A round with zero votes cast resolves to "TIE" internally (the
@@ -609,7 +1443,7 @@
       // actually failed to coordinate — there was no round to coordinate on.
       // Distinguish the two from the tally itself, never from result text.
       function totalVotes(tally) {
-        return tally.LEFT + tally.JUMP + tally.RIGHT;
+        return tally.UP + tally.DOWN + tally.LEFT + tally.RIGHT;
       }
 
       function renderTrace(recentRounds) {
@@ -620,32 +1454,31 @@
           chip.className = "trace-chip";
           chip.dataset.result = round.result;
           const t = round.tally;
-          chip.innerHTML = `<b>${round.result}</b> &middot; L${t.LEFT} J${t.JUMP} R${t.RIGHT}`;
+          const label = round.result === "TIE" ? "TIE" : round.result;
+          chip.innerHTML = `<b>${label}</b> &middot; ↑${t.UP} ↓${t.DOWN} ←${t.LEFT} →${t.RIGHT}`;
           el.trace.appendChild(chip);
         }
       }
 
+      // A compact top banner, not a full-stage overlay — it communicates the
+      // winning direction without hiding the maze or the character's new
+      // position, and clears itself after REVEAL_MS.
       function showReveal(resolvedRound) {
         if (client.revealTimer) {
           clearTimeout(client.revealTimer);
         }
         const t = resolvedRound.tally;
-        el.revealResult.textContent = resolvedRound.result === "TIE" ? "No majority — TIE" : resolvedRound.result;
+        const glyphs = { UP: "↑", DOWN: "↓", LEFT: "←", RIGHT: "→" };
+        el.revealResult.textContent =
+          resolvedRound.result === "TIE" ? "⚖ No majority — TIE" : `${glyphs[resolvedRound.result]} ${resolvedRound.result} wins!`;
         el.revealResult.dataset.result = resolvedRound.result;
-        el.revealSubtext.textContent =
-          resolvedRound.result === "TIE"
-            ? "The group didn't agree. The character held its ground."
-            : "The crowd agreed. The character moved.";
-        el.tallyLeft.textContent = String(t.LEFT);
-        el.tallyJump.textContent = String(t.JUMP);
-        el.tallyRight.textContent = String(t.RIGHT);
         el.reveal.dataset.show = "true";
         el.reveal.setAttribute("aria-hidden", "false");
 
         announce(
           resolvedRound.result === "TIE"
-            ? `Round resolved: tie. No majority. Final votes — left ${t.LEFT}, jump ${t.JUMP}, right ${t.RIGHT}.`
-            : `Round resolved: ${resolvedRound.result}. Final votes — left ${t.LEFT}, jump ${t.JUMP}, right ${t.RIGHT}.`,
+            ? `Round resolved: tie. No majority. Final votes — up ${t.UP}, down ${t.DOWN}, left ${t.LEFT}, right ${t.RIGHT}.`
+            : `Round resolved: ${resolvedRound.result}. Final votes — up ${t.UP}, down ${t.DOWN}, left ${t.LEFT}, right ${t.RIGHT}.`,
         );
 
         client.revealTimer = window.setTimeout(() => {
@@ -654,8 +1487,34 @@
         }, REVEAL_MS);
       }
 
+      // Only ever called with a resolvedRound straight from
+      // state.recentRounds — i.e. only on a server-confirmed `collided` or
+      // `advancedLevel` flag, never guessed from a score delta or a position
+      // jump (see src/db/schema.ts's comment on rounds.collided/advanced_level
+      // and src/api.ts's StatePayload for why this is safe to expose).
+      function showEventBanner(resolvedRound, newLevel) {
+        if (client.eventBannerTimer) {
+          clearTimeout(client.eventBannerTimer);
+        }
+        if (resolvedRound.collided) {
+          el.eventBanner.textContent = "ENEMY HIT · −20 POINTS · BACK TO START";
+          el.eventBanner.dataset.kind = "collision";
+          announce("An enemy caught the explorer. Score down 20 points. Back to the level start.");
+        } else {
+          el.eventBanner.textContent = `LEVEL ${String(newLevel).padStart(2, "0")} UNLOCKED`;
+          el.eventBanner.dataset.kind = "advance";
+          announce(`Level ${newLevel} unlocked.`);
+        }
+        el.eventBanner.dataset.show = "true";
+        el.eventBanner.setAttribute("aria-hidden", "false");
+        client.eventBannerTimer = window.setTimeout(() => {
+          el.eventBanner.dataset.show = "false";
+          el.eventBanner.setAttribute("aria-hidden", "true");
+        }, REVEAL_MS + 800);
+      }
+
       async function castVote(action) {
-        renderControlsLocked(true, action);
+        renderControlsLocked(true, action, client.hasWon);
         client.votedAction = action;
         try {
           const res = await fetch("/api/vote", {
@@ -667,7 +1526,7 @@
             // Vote didn't actually take (invalid/oversized/server error) — unlock so
             // the player isn't stuck locked out with nothing recorded.
             client.votedAction = null;
-            renderControlsLocked(false, null);
+            renderControlsLocked(false, null, client.hasWon);
             el.connNote.textContent = "That vote didn't go through — try again.";
           } else {
             el.connNote.textContent = "";
@@ -675,8 +1534,38 @@
           }
         } catch {
           client.votedAction = null;
-          renderControlsLocked(false, null);
+          renderControlsLocked(false, null, client.hasWon);
           el.connNote.textContent = "Couldn't reach the server — try again.";
+        }
+      }
+
+      // Any connected player may call this; the server is what actually
+      // decides whether it's allowed (restartGame re-checks character.won
+      // itself, inside its own transaction). A 409 here just means someone
+      // else's restart — or this maze's own next round — already changed the
+      // state this click was based on; that's expected under concurrency,
+      // not an error to alarm the player with. poll() (fired by the
+      // resulting SSE 'resolved' event for the player whose restart actually
+      // won, and by the backstop/tick for everyone else) is what shows the
+      // reset maze to every client.
+      async function castRestart() {
+        client.restartPending = true;
+        el.btnRestart.disabled = true;
+        try {
+          const res = await fetch("/api/restart", { method: "POST" });
+          if (!res.ok && res.status !== 409) {
+            el.connNote.textContent = "Restart didn't go through — try again.";
+            client.restartPending = false;
+            el.btnRestart.disabled = client.hasWon ? false : true;
+          } else {
+            el.connNote.textContent = "";
+            announce("Restarting the maze…");
+            await poll();
+          }
+        } catch {
+          el.connNote.textContent = "Couldn't reach the server — try again.";
+          client.restartPending = false;
+          el.btnRestart.disabled = client.hasWon ? false : true;
         }
       }
 
@@ -688,8 +1577,13 @@
           });
         }
 
+        el.btnRestart.addEventListener("click", () => {
+          if (el.btnRestart.disabled) return;
+          castRestart();
+        });
+
         document.addEventListener("keydown", (e) => {
-          const map = { ArrowLeft: "LEFT", ArrowRight: "RIGHT", ArrowUp: "JUMP", " ": "JUMP" };
+          const map = { ArrowLeft: "LEFT", ArrowRight: "RIGHT", ArrowUp: "UP", ArrowDown: "DOWN" };
           const action = map[e.key];
           if (!action) return;
           const btn = buttons[action];
@@ -720,20 +1614,65 @@
           const state = await res.json();
           el.connNote.textContent = "";
 
-          renderCharacter(state.character);
+          // The active maze is level-dependent and comes straight from this
+          // response (never hardcoded to level 1, never the old
+          // level-1-only /api/maze endpoint). Only re-render the grid itself
+          // when the geometry actually changed (a level transition or first
+          // load) — a level's own dimensions are a stable, cheap key for
+          // that.
+          client.maze = state.maze;
+          const levelKey = `${state.character.level}:${state.maze.width}x${state.maze.height}`;
+          if (client.mazeLevelKey !== levelKey) {
+            renderMazeGrid(state.maze);
+            client.mazeLevelKey = levelKey;
+            client.lastCharacterKey = null;
+          }
+
+          renderCharacter(state.character, state.maze);
+          renderPellets(state.pellets, state.maze);
+          renderEnemies(state.enemies, state.maze);
+          renderHud(state.character, state.pellets);
+          renderVictory(state.character.won, state.character.score);
           renderTrace(state.recentRounds);
 
           const newRoundId = state.round.id;
           if (client.roundId !== null && newRoundId !== client.roundId) {
             const justResolved = state.recentRounds.find((r) => r.id === client.roundId);
             if (justResolved && totalVotes(justResolved.tally) > 0) showReveal(justResolved);
+            // advancedLevel is also true on the round that completes level
+            // 10 (src/db/character.ts's reachedExit branch sets it
+            // regardless of whether there's a "next" level) — but there is
+            // no level 11 to announce, and the dedicated victory overlay
+            // already covers that moment, so a "LEVEL 10 UNLOCKED" banner
+            // here would be actively misleading. Only announce an advance
+            // when the game isn't *also* won by this same round.
+            const isRealAdvance = justResolved?.advancedLevel && !state.character.won;
+            if (
+              justResolved &&
+              (justResolved.collided || isRealAdvance) &&
+              client.lastEventRoundId !== justResolved.id
+            ) {
+              showEventBanner(justResolved, state.character.level);
+              client.lastEventRoundId = justResolved.id;
+            }
             client.votedAction = null;
           }
           client.roundId = newRoundId;
           client.resolvesAt = new Date(state.round.resolvesAt).getTime();
+          // Learned once from the server's own round span rather than
+          // hard-coded, so the countdown ring stays correct even if
+          // ROUND_DURATION_MS is ever changed server-side.
+          const span = client.resolvesAt - new Date(state.round.opensAt).getTime();
+          if (span > 0) client.roundDurationMs = span;
 
-          el.phase.textContent = "A round is open — decide together";
-          renderControlsLocked(state.round.hasVoted, state.round.hasVoted ? client.votedAction : null);
+          el.phase.textContent = state.character.won
+            ? "✨ EXIT reached — the maze is complete"
+            : "A round is open — decide together";
+          renderControlsLocked(
+            state.round.hasVoted,
+            state.round.hasVoted ? client.votedAction : null,
+            state.character.won,
+          );
         } catch {
           el.connNote.textContent = "Connection trouble — retrying…";
         } finally {
@@ -747,7 +1686,7 @@
 
       function tick() {
         renderTimer();
-        if (client.resolvesAt !== null && client.resolvesAt - Date.now() <= 0) {
+        if (!client.hasWon && client.resolvesAt !== null && client.resolvesAt - Date.now() <= 0) {
           poll();
         }
       }
