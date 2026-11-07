@@ -18,13 +18,13 @@ second model instance screening outputs, and checkpoints where an agent
 pauses for human feedback — noting "human review remains crucial" even once
 automated tests pass. Coming from a company with every incentive to
 champion autonomy instead, this treats verification as a first-class
-constraint, not an afterthought. Older empirical work on single-turn coding
+constraint, not an afterthought. Older work on single-turn coding
 assistants points the same way, though it predates today's autonomous
-agents and should not be read as direct evidence about them: Perry et al.
-(2023) found developers using such an assistant wrote less secure code than
-a control group while believing more strongly it was secure. The danger was
-not that the model failed; it was that humans stopped checking — plausibly
-worse once an assistant acts with less turn-by-turn supervision.
+agents: Perry et al. (2023) found developers using such an assistant wrote
+less secure code than a control group while believing more strongly it was
+secure. The danger was not that the model failed; it was that humans
+stopped checking — plausibly worse once an assistant acts with less
+turn-by-turn supervision.
 
 A serious counterargument deserves more than a token mention. Kwa et al.
 (2025), in work accepted at NeurIPS, show the length of task an AI system
@@ -35,10 +35,9 @@ permanent feature of agentic work. Ho and Yeung (2026), in California
 Management Review, offer a complementary argument: in the "principal
 worker" model their abstract describes, a human delegates subtasks to AI
 agents and orchestrates results, and such workers "produce more and earn
-more" (only this abstract-level claim is used; the full text was not
-accessible). Together, these suggest chasing ever-tighter oversight could
-be fighting the wrong trend — optimizing for a constraint the technology is
-dissolving.
+more" (only this abstract-level claim is used). Together, these suggest
+chasing ever-tighter oversight could be fighting the wrong trend —
+optimizing for a constraint the technology is dissolving.
 
 This counterargument does not survive close reading of its own best
 evidence: it quietly keeps verification rather than eliminating it. Ho and
@@ -48,21 +47,20 @@ is delegated at execution, while verification and accountability stay with
 the human. Their strongest source confirms the thesis rather than refuting
 it — execution capability moved, verification and accountability did not.
 Becker et al. (2025) supply a sharper warning about what happens when that
-distinction is lost. In a randomized trial, 16
-experienced open-source developers using contemporary AI tools took 19%
-*longer* to complete real tasks, yet afterward believed the tools had made
-them roughly 20% faster. This must not be generalized: the authors warn
-against reading it as evidence about AI tools broadly, flag their small,
-possibly biased sample, and METR has since said the result may be outdated
-against newer tooling. What it still illustrates is that self-reported
-confidence and measured outcome can diverge sharply — the failure mode
-letting delegated capability outrun verification capacity unnoticed.
-Mitchell et al. (2026) — a position paper, not an empirical study —
-sharpen this further: current agent designs may erode oversight skills
-needed to catch failures, so "human in the loop" is not a stable safeguard
-unless oversight is deliberately maintained.
+distinction is lost. In a randomized trial, 16 experienced open-source
+developers using contemporary AI tools took 19% *longer* to complete real
+tasks, yet afterward believed the tools had made them roughly 20% faster.
+The authors warn against generalizing from their small, possibly biased
+sample, and METR has since said the result may be outdated against newer
+tooling. What it still illustrates is that self-reported confidence and
+measured outcome can diverge sharply — the failure mode letting delegated
+capability outrun verification capacity unnoticed. Mitchell et al.
+(2026) — a position paper, not an empirical study — sharpen this further:
+current agent designs may erode the oversight skills needed to catch
+failures, so "human in the loop" is not a stable safeguard unless oversight
+is deliberately maintained.
 
-A small instance of this pattern surfaced in this project's history: a
+A small instance of this pattern surfaced in this project's own history: a
 review found a defect — an error path carrying an identifier never meant to
 be exposed — that passing tests had not caught and developer confidence
 alone would not have surfaced. That single data point proves nothing in
