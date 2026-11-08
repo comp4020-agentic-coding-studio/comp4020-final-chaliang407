@@ -24,7 +24,9 @@ Ten hand-validated mazes, each larger than the last, each with at least two
 distinct routes from START to EXIT so there's a real choice to disagree
 about. Every level scatters a handful of collectible pellets (+10 points
 each, optional — EXIT never requires collecting them all) and, from level 3
-on, randomly-moving enemies: a collision costs 20 points (floored at zero)
+on, enemies that mostly hunt: each move, 70% of the time an enemy takes the
+shortest legal path toward the explorer, and 30% of the time it wanders to a
+random legal tile instead. A collision costs 20 points (floored at zero)
 and resets the explorer to that level's START, overriding any level
 transition that round. Reaching EXIT with no collision advances to the next
 level's START; reaching level 10's EXIT is final victory, after which any
